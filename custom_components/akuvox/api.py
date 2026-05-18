@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import socket
 import json
+import time
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 
@@ -30,7 +32,10 @@ from .const import (
     API_OPENDOOR,
     API_APP_HOST,
     API_GET_PERSONAL_TEMP_KEY_LIST,
-    API_GET_PERSONAL_DOOR_LOG
+    API_GET_PERSONAL_DOOR_LOG,
+    API_REFRESH_TOKEN,
+    LAST_TOKEN_REFRESH_KEY,
+    TOKEN_REFRESH_INTERVAL_DAYS,
 )
 
 
@@ -61,6 +66,8 @@ class AkuvoxApiClient:
         """Akuvox API Client."""
         self._session = session
         self.hass = hass
+        self._last_api_error: dict[str, Any] | None = None
+        self._next_refresh_retry_at = 0
         if entry:
             LOGGER.debug("▶️ Initializing AkuvoxData from API client init")
             self._data = AkuvoxData(
@@ -69,6 +76,21 @@ class AkuvoxApiClient:
 
     async def async_init_api(self) -> bool:
         """Initialize API configuration data."""
+        stored_token = await self._data.async_get_stored_data_for_key("token")
+        if stored_token:
+            self._data.token = stored_token
+
+        stored_auth_token = await self._data.async_get_stored_data_for_key("auth_token")
+        if stored_auth_token:
+            self._data.auth_token = stored_auth_token
+
+        stored_refresh_token = await self._data.async_get_stored_data_for_key("refresh_token")
+        if stored_refresh_token:
+            self._data.refresh_token = stored_refresh_token
+
+        if self._data.refresh_token:
+            await self.async_check_and_refresh_tokens(reason="startup")
+
         if self._data.host is None or len(self._data.host) == 0:
             self._data.host = "...request in process"
             if await self.async_fetch_rest_server() is False:
@@ -110,6 +132,7 @@ class AkuvoxApiClient:
                            subdomain=None,
                            auth_token=None,
                            token=None,
+                           refresh_token=None,
                            phone_number=None,
                            country_code=None):
         """"Initialize values from saved data/options."""
@@ -122,6 +145,7 @@ class AkuvoxApiClient:
                 subdomain=subdomain, # type: ignore
                 auth_token=auth_token, # type: ignore
                 token=token, # type: ignore
+                refresh_token=refresh_token, # type: ignore
                 phone_number=phone_number, # type: ignore
                 country_code=country_code) # type: ignore
         self.hass = self.hass if self.hass else hass
@@ -238,6 +262,7 @@ class AkuvoxApiClient:
         if json_data is not None:
             LOGGER.debug("✅ Server list retrieved successfully")
             self._data.parse_sms_login_response(json_data) # type: ignore
+            await self.async_store_tokens(update_last_refresh=False)
             return True
 
         LOGGER.error("❌ Unable to retrieve server list. Try sigining in again / check that your tokens are valid.")
@@ -249,6 +274,7 @@ class AkuvoxApiClient:
         login_data = await self.async_validate_sms_code(phone_number, country_code, sms_code)
         if login_data is not None:
             self._data.parse_sms_login_response(login_data) # type: ignore
+            await self.async_store_tokens(update_last_refresh=False)
 
             # Retrieve connected device data
             await self.async_retrieve_device_data()
@@ -305,6 +331,54 @@ class AkuvoxApiClient:
         self._data.auth_token = auth_token
         self._data.token = token
         return await self.async_retrieve_user_data()
+
+    async def async_refresh_token(self, reason: str = "scheduled refresh") -> bool:
+        """Refresh the current Akuvox token pair using the stored refresh token."""
+        if not self._data.refresh_token:
+            LOGGER.warning("Akuvox token refresh skipped: no refresh_token is available.")
+            return False
+
+        url = f"https://gate.{self._data.subdomain}.akuvox.com:{REST_SERVER_PORT}/{API_REFRESH_TOKEN}"
+        headers = {
+            "x-auth-token": self._data.token,
+            "content-type": "application/json",
+            "accept": "application/json",
+            "api-version": "6.8",
+            "user-agent": "VBell/7.12.2 (iPhone; iOS 18.5; Scale/2.00)",
+        }
+        data = json.dumps({
+            "refresh_token": self._data.refresh_token,
+        })
+
+        LOGGER.info("Refreshing Akuvox credentials (%s).", reason)
+        json_data = await self._async_api_wrapper(
+            method="post",
+            url=url,
+            headers=headers,
+            data=data,
+        )
+        if json_data is None:
+            LOGGER.error("Akuvox token refresh failed: empty response.")
+            return False
+
+        payload = json_data.get("datas", json_data) if isinstance(json_data, dict) else {}
+        new_token = payload.get("token")
+        new_refresh_token = payload.get("refresh_token")
+        if not new_token or not new_refresh_token:
+            LOGGER.error("Akuvox token refresh failed: response did not include a new token pair.")
+            return False
+
+        self._data.token = new_token
+        self._data.refresh_token = new_refresh_token
+        await self.async_store_tokens(update_last_refresh=True)
+        self._next_refresh_retry_at = 0
+        LOGGER.info("Akuvox credentials refreshed successfully.")
+        LOGGER.debug(
+            "Akuvox token rotation complete. token=%s refresh_token=%s",
+            self._mask_token(new_token),
+            self._mask_token(new_refresh_token),
+        )
+        return True
 
     async def async_user_conf(self):
         """Request the user's configuration data."""
@@ -415,6 +489,9 @@ class AkuvoxApiClient:
 
     async def async_get_personal_door_log(self):
         """Request the user's personal door log data."""
+        if self._data.refresh_token:
+            await self.async_check_and_refresh_tokens(reason="door log poll")
+
         # LOGGER.debug("📡 Retrieving list of user's personal door log...")
         host = self.get_activities_host()
         url = f"https://{host}/{API_GET_PERSONAL_DOOR_LOG}"
@@ -446,6 +523,16 @@ class AkuvoxApiClient:
                                                       url=url,
                                                       headers=headers,
                                                       data=data) # type: ignore
+
+        if json_data is None and self.has_token_error():
+            LOGGER.warning("Akuvox door log rejected the current token; refreshing and retrying once.")
+            if await self.async_refresh_token(reason="door log rejection"):
+                headers["referer"] = f"https://{self._data.subdomain}.akuvox.com/smartplus/Activities.html?TOKEN={self._data.token}"
+                headers["x-auth-token"] = self._data.token
+                json_data = await self._async_api_wrapper(method="get",
+                                                          url=url,
+                                                          headers=headers,
+                                                          data=data) # type: ignore
 
         if json_data is not None and len(json_data) > 0:
             return json_data
@@ -515,20 +602,37 @@ class AkuvoxApiClient:
                 json_data = response.json()
 
                 # Standard requests
-                if "result" in json_data and json_data["result"] == 0:
-                    if "datas" in json_data:
-                        return json_data["datas"]
-                    return json_data
+                if "result" in json_data:
+                    if json_data["result"] == 0:
+                        self._last_api_error = None
+                        if "datas" in json_data:
+                            return json_data["datas"]
+                        return json_data
+                    self._last_api_error = json_data
+                    LOGGER.warning("Akuvox API rejected %s: %s", url, json_data)
+                    return None
 
                 # Temp key requests
                 if "code" in json_data:
                     if json_data["code"] == 0:
+                        self._last_api_error = None
                         if "data" in json_data:
                             return json_data["data"]
                         return json_data
+                    self._last_api_error = json_data
+                    LOGGER.warning("Akuvox API rejected %s: %s", url, json_data)
                     return []
 
+                if "err_code" in json_data:
+                    if str(json_data["err_code"]) == "0":
+                        self._last_api_error = None
+                        return json_data
+                    self._last_api_error = json_data
+                    LOGGER.warning("Akuvox refresh API rejected %s: %s", url, json_data)
+                    return None
+
                 LOGGER.warning("🤨 Response: %s", str(json_data))
+                self._last_api_error = None
             except Exception as error:
                 LOGGER.error("❌ Error occurred when parsing JSON: %s\nRequest: %s",
                              error,
@@ -635,4 +739,64 @@ class AkuvoxApiClient:
         self._data.subdomain = value if key == "subdomain" else self._data.subdomain
         self._data.auth_token = value if key == "auth_token" else self._data.auth_token
         self._data.token = value if key == "token" else self._data.token
+        self._data.refresh_token = value if key == "refresh_token" else self._data.refresh_token
         self._data.wait_for_image_url = value if key == "wait_for_image_url" else self._data.wait_for_image_url
+
+    async def async_store_tokens(self, update_last_refresh: bool) -> None:
+        """Persist the active Akuvox tokens to Home Assistant storage."""
+        await self._data.async_set_stored_data_for_key("auth_token", self._data.auth_token)
+        await self._data.async_set_stored_data_for_key("token", self._data.token)
+        await self._data.async_set_stored_data_for_key("refresh_token", self._data.refresh_token)
+        if update_last_refresh:
+            await self._data.async_set_stored_data_for_key(LAST_TOKEN_REFRESH_KEY, int(time.time()))
+
+    def has_token_error(self) -> bool:
+        """Return True when the most recent API error looks like an auth/token failure."""
+        if not self._last_api_error:
+            return False
+
+        error_text = json.dumps(self._last_api_error).lower()
+        return any(
+            token_error in error_text
+            for token_error in (
+                "token invalid",
+                "token expired",
+                "invalid identity",
+                "unauthorized",
+                "\"code\": 2",
+                "\"err_code\": 2",
+            )
+        )
+
+    async def async_check_and_refresh_tokens(self, reason: str) -> bool:
+        """Refresh the Akuvox token pair before expiry."""
+        if not self._data.refresh_token:
+            return True
+
+        last_refresh = await self._data.async_get_stored_data_for_key(LAST_TOKEN_REFRESH_KEY)
+        now = int(time.time())
+        refresh_interval = TOKEN_REFRESH_INTERVAL_DAYS * 24 * 60 * 60
+
+        needs_refresh = True
+        if last_refresh is not None:
+            try:
+                needs_refresh = now - int(last_refresh) >= refresh_interval
+            except (TypeError, ValueError):
+                needs_refresh = True
+
+        if not needs_refresh:
+            return True
+
+        if now < self._next_refresh_retry_at:
+            return False
+
+        refreshed = await self.async_refresh_token(reason=reason)
+        if not refreshed:
+            self._next_refresh_retry_at = now + 3600
+        return refreshed
+
+    def _mask_token(self, value: str) -> str:
+        """Return a redacted token string for logs."""
+        if len(value) <= 8:
+            return "***"
+        return f"{value[:4]}...{value[-4:]}"

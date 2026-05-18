@@ -12,6 +12,7 @@ DEFAULT_COUNTRY_CODE = "+1"
 DEFAULT_PHONE_NUMBER = "555-5555"
 DEFAULT_APP_TOKEN = ""
 DEFAULT_TOKEN = ""
+DEFAULT_REFRESH_TOKEN = ""
 
 SUBDOMAIN_AU = "aucloud"
 SUBDOMAIN_C = "ccloud"
@@ -466,6 +467,7 @@ API_SERVERS_LIST = "servers_list"
 API_SMS_LOGIN = "sms_login"
 API_USERCONF = "userconf"
 API_OPENDOOR = "opendoor"
+API_REFRESH_TOKEN = "refresh_token"
 
 API_APP_HOST = "subdomain.akuvox.com/web-server/v3/app/"
 API_GET_PERSONAL_TEMP_KEY_LIST = "tempKey/getPersonalTempKeyList?row=20&page=1"
@@ -474,6 +476,8 @@ API_GET_PERSONAL_DOOR_LOG = "log/getDoorLog?row=1"
 TEMP_KEY_QR_HOST = "subdomain.akuvox.com"
 
 DATA_STORAGE_KEY = "akuvox_data_storage_key"
+LAST_TOKEN_REFRESH_KEY = "last_token_refresh"
+TOKEN_REFRESH_INTERVAL_DAYS = 6
 
 CAPTURE_TIME_KEY = "CaptureTime"
 PIC_URL_KEY = "PicUrl"

@@ -13,6 +13,7 @@ from .const import (
     DOMAIN,
     DEFAULT_TOKEN,
     DEFAULT_APP_TOKEN,
+    DEFAULT_REFRESH_TOKEN,
     LOGGER,
     LOCATIONS_DICT,
     COUNTRY_PHONE,
@@ -176,6 +177,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 "phone_number", "").replace("-", "").replace(" ", "")
             token: str = user_input.get("token", "")
             auth_token: str = user_input.get("auth_token", "")
+            refresh_token: str = user_input.get("refresh_token", "")
             subdomain: str = user_input.get("subdomain", "Default")
             subdomain = subdomain if subdomain != "Default" else helpers.get_subdomain_from_country_code(country_code)
 
@@ -185,6 +187,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 "phone_number": phone_number,
                 "token": token,
                 "auth_token": auth_token,
+                "refresh_token": refresh_token,
                 "subdomain": subdomain
             }
 
@@ -199,6 +202,41 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     phone_number=phone_number,
                     subdomain=subdomain)
                 if login_successful is True:
+                    captured_refresh_token = self.akuvox_api_client._data.refresh_token
+                    if not captured_refresh_token and refresh_token:
+                        self.akuvox_api_client.update_data("refresh_token", refresh_token)
+                        captured_refresh_token = refresh_token
+
+                    if not captured_refresh_token:
+                        LOGGER.error("❌ No refresh token available after app-token sign-in.")
+                        return self.async_show_form(
+                            step_id="app_tokens_sign_in",
+                            data_schema=vol.Schema(self.get_app_tokens_sign_in_schema(user_input)),
+                            description_placeholders=user_input,
+                            last_step=True,
+                            errors={
+                                "base": "A refresh_token is required for app-token sign-in because Akuvox rotates credentials. Capture it from SmartPlus and try again."
+                            }
+                        )
+
+                    refresh_successful = await self.akuvox_api_client.async_refresh_token(
+                        reason="initial app-token validation"
+                    )
+                    if refresh_successful is not True:
+                        LOGGER.error("❌ Initial app-token refresh validation failed.")
+                        return self.async_show_form(
+                            step_id="app_tokens_sign_in",
+                            data_schema=vol.Schema(self.get_app_tokens_sign_in_schema(user_input)),
+                            description_placeholders=user_input,
+                            last_step=True,
+                            errors={
+                                "base": "Token validation failed. The refresh_token did not successfully rotate the credentials."
+                            }
+                        )
+
+                    self.data["token"] = self.akuvox_api_client._data.token
+                    self.data["refresh_token"] = self.akuvox_api_client._data.refresh_token
+
                     # Retrieve connected device data
                     await self.akuvox_api_client.async_retrieve_user_data()
                     devices_json = self.akuvox_api_client.get_devices_json()
@@ -368,6 +406,11 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 msg=None,
                 default=user_input.get("token", DEFAULT_TOKEN),  # type: ignore
                 description="Your SmartPlus account's token string"): str,
+            vol.Optional(
+                "refresh_token",
+                msg=None,
+                default=user_input.get("refresh_token", DEFAULT_REFRESH_TOKEN),  # type: ignore
+                description="Optional: your SmartPlus account's refresh_token string"): str,
             vol.Optional("subdomain",
                          default="Default", # type: ignore
                          description="Manually set the regional API subdomain"):
@@ -426,6 +469,9 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional("token",
                          default=self.get_data_key_value("token", False) # type: ignore
             ): str,
+            vol.Optional("refresh_token",
+                         default=self.get_data_key_value("refresh_token", False) # type: ignore
+            ): str,
             vol.Optional("subdomain",
                 default=current_subdomain, # type: ignore
                 description="Manually set the regional API subdomain"):
@@ -461,6 +507,7 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             self.akuvox_api_client._data.host = self.get_data_key_value("host") # type: ignore
             self.akuvox_api_client._data.auth_token = self.get_data_key_value("auth_token") # type: ignore
             self.akuvox_api_client._data.token = self.get_data_key_value("token") # type: ignore
+            self.akuvox_api_client._data.refresh_token = self.get_data_key_value("refresh_token") # type: ignore
             self.akuvox_api_client._data.phone_number = self.get_data_key_value("phone_number") # type: ignore
             self.akuvox_api_client._data.wait_for_image_url = self.get_data_key_value("wait_for_image_url") # type: ignore
 
@@ -507,6 +554,12 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                     msg=None,
                     default=user_input.get("token", ""),
                     description="Your SmartPlus user's token."
+                ): str,
+                vol.Optional(
+                    "refresh_token",
+                    msg=None,
+                    default=user_input.get("refresh_token", ""),
+                    description="Your SmartPlus user's refresh_token."
                 ): str,
                 vol.Optional("subdomain",
                     default="Default", # type: ignore

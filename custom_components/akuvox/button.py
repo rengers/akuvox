@@ -87,12 +87,32 @@ class AkuvoxDoorRelayEntity(ButtonEntity, AkuvoxEntity):
             manufacturer=NAME,
         )
 
-    def press(self) -> None:
+    async def async_press(self) -> None:
         """Trigger the door relay."""
-        self._client.make_opendoor_request(
-            name=self._name,
-            host=self._host,
-            token=self._token,
-            data=self._data
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+        current_host = self._client._data.host
+        current_token = self._client._data.token
+        result = await loop.run_in_executor(
+            None,
+            lambda: self._client.make_opendoor_request(
+                name=self._name,
+                host=current_host,
+                token=current_token,
+                data=self._data
+            )
         )
 
+        if result is None and self._client.has_token_error():
+            LOGGER.warning("Akuvox door open failed due to an expired token; refreshing and retrying once.")
+            if await self._client.async_refresh_token(reason="door open retry"):
+                await loop.run_in_executor(
+                    None,
+                    lambda: self._client.make_opendoor_request(
+                        name=self._name,
+                        host=self._client._data.host,
+                        token=self._client._data.token,
+                        data=self._data
+                    )
+                )

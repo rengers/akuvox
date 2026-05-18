@@ -219,9 +219,11 @@ Sigining in via SMS verification will sign you out from the SmartPlus app on you
 
 Sigining in using your SmartLife app tokens will allow you to remain signed in to the SmartLife app on your device.
 
-1. Obtain your `auth_token` and `token` values (see the [Finding you SmartPlus Account Tokens](#finding-your-smartplus-account-tokens) section below).
+1. Obtain your `auth_token`, `token`, and preferably `refresh_token` values (see the [Finding you SmartPlus Account Tokens](#finding-your-smartplus-account-tokens) section below).
 
-1. Enter your phone number, `auth_token` and `token` values and click `SUBMIT`:
+1. Enter your phone number, `auth_token`, `token`, and optionally `refresh_token`, then click `SUBMIT`.
+
+1. During setup the integration will immediately call Akuvox's `refresh_token` API and then perform a normal read-only account/device fetch to verify that the rotated credentials work before the entry is created. Successful refreshes are logged in Home Assistant.
 <img src="https://user-images.githubusercontent.com/1849295/269958871-071008db-c2d8-4455-a612-eb0a9721ea39.png" width="400">
 
 ### You should now have one device per Akuvox door camera with a camera and door relay button/s entity
@@ -251,6 +253,6 @@ To obtain your SmartPlus account tokens you can use an HTTP proxy (such as [mitm
 
 3. Search for the `sms_login` request. Select it and click on the `Response` tab. Set the View to `JSON`.
 
-    You should find your `auth_token` and `token` values:
+    You should find your `auth_token`, `token`, and `refresh_token` values:
 
 ![instructions](https://github.com/user-attachments/assets/c1550332-4499-48f0-a55e-34dea410e558)
