@@ -2,7 +2,7 @@
   "domain": "akuvox",
   "name": "Akuvox SmartPlus",
   "codeowners": [
-    "@nimroddolev"
+    "@rengers"
   ],
   "config_flow": true,
   "dependencies": [
@@ -10,9 +10,9 @@
     "generic",
     "sensor"
   ],
-  "documentation": "https://github.com/nimroddolev/akuvox",
+  "documentation": "https://github.com/rengers/akuvox",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/nimroddolev/akuvox/issues",
-  "version": "v0.2.0-beta3"
+  "issue_tracker": "https://github.com/rengers/akuvox/issues",
+  "version": "v0.2.0-beta4"
 }
