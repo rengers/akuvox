@@ -203,7 +203,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     subdomain=subdomain)
                 if login_successful is True:
                     captured_refresh_token = self.akuvox_api_client._data.refresh_token
-                    if not captured_refresh_token and refresh_token:
+                    if refresh_token:
                         self.akuvox_api_client.update_data("refresh_token", refresh_token)
                         captured_refresh_token = refresh_token
 

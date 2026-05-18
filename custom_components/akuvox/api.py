@@ -77,15 +77,15 @@ class AkuvoxApiClient:
     async def async_init_api(self) -> bool:
         """Initialize API configuration data."""
         stored_token = await self._data.async_get_stored_data_for_key("token")
-        if stored_token:
+        if stored_token and not self._data.token:
             self._data.token = stored_token
 
         stored_auth_token = await self._data.async_get_stored_data_for_key("auth_token")
-        if stored_auth_token:
+        if stored_auth_token and not self._data.auth_token:
             self._data.auth_token = stored_auth_token
 
         stored_refresh_token = await self._data.async_get_stored_data_for_key("refresh_token")
-        if stored_refresh_token:
+        if stored_refresh_token and not self._data.refresh_token:
             self._data.refresh_token = stored_refresh_token
 
         if self._data.refresh_token:
