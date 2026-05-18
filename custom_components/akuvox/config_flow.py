@@ -223,19 +223,10 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                         reason="initial app-token validation"
                     )
                     if refresh_successful is not True:
-                        LOGGER.error("❌ Initial app-token refresh validation failed.")
-                        return self.async_show_form(
-                            step_id="app_tokens_sign_in",
-                            data_schema=vol.Schema(self.get_app_tokens_sign_in_schema(user_input)),
-                            description_placeholders=user_input,
-                            last_step=True,
-                            errors={
-                                "base": "Token validation failed. The refresh_token did not successfully rotate the credentials. Check Home Assistant logs for the Akuvox refresh API response."
-                            }
-                        )
-
-                    self.data["token"] = self.akuvox_api_client._data.token
-                    self.data["refresh_token"] = self.akuvox_api_client._data.refresh_token
+                        LOGGER.warning("⚠️ Initial app-token refresh validation failed. Continuing setup with the provided credentials.")
+                    else:
+                        self.data["token"] = self.akuvox_api_client._data.token
+                        self.data["refresh_token"] = self.akuvox_api_client._data.refresh_token
 
                     # Retrieve connected device data
                     await self.akuvox_api_client.async_retrieve_user_data()

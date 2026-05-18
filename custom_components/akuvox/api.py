@@ -359,7 +359,10 @@ class AkuvoxApiClient:
             data=data,
         )
         if json_data is None:
-            LOGGER.error("Akuvox token refresh failed: empty response.")
+            if self._last_api_error:
+                LOGGER.error("Akuvox token refresh failed with API error: %s", self._last_api_error)
+            else:
+                LOGGER.error("Akuvox token refresh failed: empty response.")
             return False
 
         payload = json_data.get("datas", json_data) if isinstance(json_data, dict) else {}
