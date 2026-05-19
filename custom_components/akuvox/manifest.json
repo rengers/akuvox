@@ -5,14 +5,8 @@
     "@rengers"
   ],
   "config_flow": true,
-  "dependencies": [
-    "button",
-    "generic",
-    "sensor"
-  ],
   "documentation": "https://github.com/rengers/akuvox",
-  "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/rengers/akuvox/issues",
-  "version": "v0.2.0-beta12"
+  "version": "0.2.0b13"
 }
