@@ -4,10 +4,8 @@
             "user": {
                 "title": "Akuvox SmartPlus Sign-In",
                 "description": "Choose a sign-in method to connect to your Akuvox SmartPlus account:",
-                "menu_options": {
-                    "sms_sign_in_warning": "1. SMS Verification (Recommended)",
-                    "app_tokens_sign_in": "2. App Tokens (Advanced)",
-                    "family_member_sign_in": "3. Family Member Tokens"
+                "data": {
+                    "sign_in_method": "Sign-In Method"
                 }
             },
             "sms_sign_in_warning": {

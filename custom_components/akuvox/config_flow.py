@@ -53,11 +53,38 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     hass=self.hass,
                     entry=None)
 
+        sign_in_options = [
+            selector.SelectOptionDict(value="sms", label="1. SMS Verification (Recommended)"),
+            selector.SelectOptionDict(value="app_tokens", label="2. App Tokens (Advanced)"),
+            selector.SelectOptionDict(value="family_tokens", label="3. Family Member Tokens"),
+        ]
+        data_schema = vol.Schema({
+            vol.Required(
+                "sign_in_method",
+                default=(user_input or {}).get("sign_in_method", "sms"),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=sign_in_options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    custom_value=False,
+                )
+            )
+        })
 
-        return self.async_show_menu(
+        if user_input is not None:
+            selection = user_input.get("sign_in_method")
+            if selection == "sms":
+                return await self.async_step_sms_sign_in_warning()
+            if selection == "app_tokens":
+                return await self.async_step_app_tokens_sign_in()
+            if selection == "family_tokens":
+                return await self.async_step_family_member_sign_in()
+
+        return self.async_show_form(
             step_id="user",
-            menu_options=["sms_sign_in_warning", "app_tokens_sign_in", "family_member_sign_in"],
+            data_schema=data_schema,
             description_placeholders=user_input,
+            last_step=False,
         )
 
     async def async_step_sms_sign_in_warning(self, user_input=None):
