@@ -56,7 +56,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_menu(
             step_id="user",
-            menu_options=["sms_sign_in_warning", "app_tokens_sign_in"],
+            menu_options=["sms_sign_in_warning", "app_tokens_sign_in", "family_member_sign_in"],
             description_placeholders=user_input,
         )
 
@@ -65,10 +65,11 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         sms_sign_in = "Continue sign-in via SMS Verification"
         app_tokens_sign_in = "Sign-in via app tokens"
+        family_member_sign_in = "Sign-in via family member tokens"
         data_schema = {
             "warning_option_selection": selector.selector({
                 "select": {
-                    "options": [sms_sign_in, app_tokens_sign_in],
+                    "options": [sms_sign_in, app_tokens_sign_in, family_member_sign_in],
                 }
             })
         }
@@ -87,6 +88,14 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     return self.async_show_form(
                         step_id="app_tokens_sign_in",
                         data_schema=vol.Schema(self.get_app_tokens_sign_in_schema(user_input)),
+                        description_placeholders=user_input,
+                        last_step=False,
+                        errors=None
+                    )
+                if selection == family_member_sign_in:
+                    return self.async_show_form(
+                        step_id="family_member_sign_in",
+                        data_schema=vol.Schema(self.get_family_member_sign_in_schema(user_input)),
                         description_placeholders=user_input,
                         last_step=False,
                         errors=None
@@ -271,6 +280,78 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             last_step=True,
         )
 
+    async def async_step_family_member_sign_in(self, user_input=None):
+        """Sign in using a family-member token pair captured from SmartPlus."""
+        data_schema = self.get_family_member_sign_in_schema(user_input)
+        if user_input is not None:
+            token: str = user_input.get("token", "").strip()
+            refresh_token: str = user_input.get("refresh_token", "").strip()
+            subdomain: str = user_input.get("subdomain", "Default")
+            subdomain = subdomain if subdomain != "Default" else "ucloud"
+            host = f"rest.{subdomain}.akuvox.com:8443"
+
+            self.data = {
+                "auth_mode": "family_member",
+                "host": host,
+                "token": token,
+                "refresh_token": refresh_token,
+                "subdomain": subdomain,
+            }
+
+            if all(len(value) > 0 for value in (token, refresh_token)):
+                self.akuvox_api_client.init_api_with_data(
+                    hass=self.hass,
+                    host=host,
+                    token=token,
+                    refresh_token=refresh_token,
+                    auth_mode="family_member",
+                    subdomain=subdomain,
+                )
+                refresh_successful = await self.akuvox_api_client.async_refresh_token(
+                    reason="initial family-member validation"
+                )
+                if refresh_successful is not True:
+                    return self.async_show_form(
+                        step_id="family_member_sign_in",
+                        data_schema=vol.Schema(self.get_family_member_sign_in_schema(user_input)),
+                        description_placeholders=user_input,
+                        last_step=True,
+                        errors={
+                            "base": "Family-member token validation failed. Capture a fresh token + refresh_token pair from SmartPlus and try again."
+                        }
+                    )
+
+                self.data["host"] = self.akuvox_api_client._data.host
+                self.data["token"] = self.akuvox_api_client._data.token
+                self.data["refresh_token"] = self.akuvox_api_client._data.refresh_token
+
+                await self.akuvox_api_client.async_retrieve_device_data()
+                await self.akuvox_api_client.async_retrieve_temp_keys_data()
+                devices_json = self.akuvox_api_client.get_devices_json()
+                self.data.update(devices_json)
+
+                return self.async_create_entry(
+                    title=self.akuvox_api_client.get_title(),
+                    data=self.data,
+                )
+
+            return self.async_show_form(
+                step_id="family_member_sign_in",
+                data_schema=vol.Schema(self.get_family_member_sign_in_schema(user_input)),
+                description_placeholders=user_input,
+                last_step=True,
+                errors={
+                    "base": "Please enter the family-member token and refresh_token."
+                }
+            )
+
+        return self.async_show_form(
+            step_id="family_member_sign_in",
+            data_schema=vol.Schema(data_schema),
+            description_placeholders=user_input,
+            last_step=True,
+        )
+
     async def async_step_verify_sms_code(self, user_input=None):
         """Step 2: User enters the SMS code received on their phone for verifiation.
 
@@ -406,6 +487,31 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Optional("subdomain",
                          default="Default", # type: ignore
                          description="Manually set the regional API subdomain"):
+                         selector.SelectSelector(
+                             selector.SelectSelectorConfig(
+                                 options=SUBDOMAINS_LIST,
+                                 mode=selector.SelectSelectorMode.DROPDOWN,
+                                 custom_value=True),
+                                 )
+        }
+
+    def get_family_member_sign_in_schema(self, user_input: dict = {}):
+        """Get the schema for family_member_sign_in step."""
+        user_input = user_input or {}
+        return {
+            vol.Required(
+                "token",
+                msg=None,
+                default=user_input.get("token", DEFAULT_TOKEN),  # type: ignore
+                description="Token from the successful SmartPlus family-member login response"): str,
+            vol.Required(
+                "refresh_token",
+                msg=None,
+                default=user_input.get("refresh_token", DEFAULT_REFRESH_TOKEN),  # type: ignore
+                description="Refresh token from the successful SmartPlus family-member login response"): str,
+            vol.Optional("subdomain",
+                         default=user_input.get("subdomain", "ucloud"),  # type: ignore
+                         description="Regional API subdomain"):
                          selector.SelectSelector(
                              selector.SelectSelectorConfig(
                                  options=SUBDOMAINS_LIST,
