@@ -114,9 +114,16 @@ async def async_update_configuration(hass: HomeAssistant, entry: ConfigEntry) ->
             LOGGER.debug("Configured values:")
             for key, value in updated_options.items():
                 #                           value=value)
-                if value:
+                if value is not None:
                     client.update_data(key, value)
-                    if key in ["auth_token", "token", "refresh_token", "password_hash"]:
+                    if key in [
+                        "auth_mode",
+                        "auth_token",
+                        "token",
+                        "refresh_token",
+                        "login_user",
+                        "password_hash",
+                    ]:
                         await client._data.async_set_stored_data_for_key(key, value)
                     str_value: str = str(value)
                     if key in ["auth_token", "token", "refresh_token", "password_hash"]:

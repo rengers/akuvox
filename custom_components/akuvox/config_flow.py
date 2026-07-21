@@ -579,6 +579,13 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             country_names_list.append(country_dict.get("country"))
 
         options_schema = vol.Schema({
+            vol.Optional(
+                "auth_mode",
+                default=self.get_data_key_value("auth_mode", "app_tokens"),
+            ): vol.In({
+                "app_tokens": "App tokens",
+                "family_member": "Family-member tokens",
+            }),
             vol.Optional("country",
                          default=default_country_name,
                          description="Your country code"):
@@ -589,13 +596,13 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                                  custom_value=False),
                                  ),
             vol.Optional("auth_token",
-                         default=self.get_data_key_value("auth_token", False) # type: ignore
+                         default=self.get_data_key_value("auth_token", "") # type: ignore
             ): str,
             vol.Optional("token",
-                         default=self.get_data_key_value("token", False) # type: ignore
+                         default=self.get_data_key_value("token", "") # type: ignore
             ): str,
             vol.Optional("refresh_token",
-                         default=self.get_data_key_value("refresh_token", False) # type: ignore
+                         default=self.get_data_key_value("refresh_token", "") # type: ignore
             ): str,
             vol.Optional("subdomain",
                 default=current_subdomain, # type: ignore

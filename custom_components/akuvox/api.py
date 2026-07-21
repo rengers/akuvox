@@ -78,27 +78,27 @@ class AkuvoxApiClient:
     async def async_init_api(self) -> bool:
         """Initialize API configuration data."""
         stored_token = await self._data.async_get_stored_data_for_key("token")
-        if stored_token and not self._data.token:
+        if stored_token:
             self._data.token = stored_token
 
         stored_auth_token = await self._data.async_get_stored_data_for_key("auth_token")
-        if stored_auth_token and not self._data.auth_token:
+        if stored_auth_token:
             self._data.auth_token = stored_auth_token
 
         stored_refresh_token = await self._data.async_get_stored_data_for_key("refresh_token")
-        if stored_refresh_token and not self._data.refresh_token:
+        if stored_refresh_token:
             self._data.refresh_token = stored_refresh_token
 
         stored_auth_mode = await self._data.async_get_stored_data_for_key("auth_mode")
-        if stored_auth_mode and not self._data.auth_mode:
+        if stored_auth_mode:
             self._data.auth_mode = stored_auth_mode
 
         stored_login_user = await self._data.async_get_stored_data_for_key("login_user")
-        if stored_login_user and not self._data.login_user:
+        if stored_login_user:
             self._data.login_user = stored_login_user
 
         stored_password_hash = await self._data.async_get_stored_data_for_key("password_hash")
-        if stored_password_hash and not self._data.password_hash:
+        if stored_password_hash:
             self._data.password_hash = stored_password_hash
 
         if (
@@ -396,12 +396,16 @@ class AkuvoxApiClient:
             return True
         return False
 
-    async def async_retrieve_device_data(self) -> bool:
+    async def async_retrieve_device_data(self, _retry_after_refresh: bool = True) -> bool:
         """Request and parse the user's device data."""
         user_conf_data = await self.async_user_conf()
         if user_conf_data is not None:
             self._data.parse_userconf_data(user_conf_data) # type: ignore
             return True
+        if _retry_after_refresh and self.has_token_error():
+            LOGGER.warning("Akuvox device request rejected the current token; refreshing and retrying once.")
+            if await self.async_refresh_token(reason="device request rejection"):
+                return await self.async_retrieve_device_data(_retry_after_refresh=False)
         return False
 
     async def async_retrieve_user_data_with_tokens(self, auth_token, token) -> bool:
@@ -410,7 +414,11 @@ class AkuvoxApiClient:
         self._data.token = token
         return await self.async_retrieve_user_data()
 
-    async def async_refresh_token(self, reason: str = "scheduled refresh") -> bool:
+    async def async_refresh_token(
+        self,
+        reason: str = "scheduled refresh",
+        _retry_after_login: bool = True,
+    ) -> bool:
         """Refresh the current Akuvox token pair using the stored refresh token."""
         if not self._data.refresh_token:
             LOGGER.warning("Akuvox token refresh skipped: no refresh_token is available.")
@@ -438,7 +446,12 @@ class AkuvoxApiClient:
         )
         if json_data is None:
             if self._last_api_error:
-                if self._data.auth_mode == "family_member" and self._data.login_user and self._data.password_hash:
+                if (
+                    _retry_after_login
+                    and self._data.auth_mode == "family_member"
+                    and self._data.login_user
+                    and self._data.password_hash
+                ):
                     LOGGER.warning("Akuvox refresh failed for family-member session; attempting re-login.")
                     if await self.async_family_member_login(
                         hass=self.hass,
@@ -446,15 +459,34 @@ class AkuvoxApiClient:
                         password_hash=self._data.password_hash,
                         subdomain=self._data.subdomain,
                     ):
-                        return await self.async_refresh_token(reason="post re-login refresh")
+                        return await self.async_refresh_token(
+                            reason="post re-login refresh",
+                            _retry_after_login=False,
+                        )
                 LOGGER.error("Akuvox token refresh failed with API error: %s", self._last_api_error)
             else:
                 LOGGER.error("Akuvox token refresh failed: empty response.")
             return False
 
-        payload = json_data.get("datas", json_data) if isinstance(json_data, dict) else {}
-        new_token = payload.get("token")
-        new_refresh_token = payload.get("refresh_token")
+        payload = json_data
+        new_token = None
+        new_refresh_token = None
+        while isinstance(payload, dict):
+            new_token = payload.get("token")
+            new_refresh_token = payload.get("refresh_token")
+            if new_token and new_refresh_token:
+                break
+            nested = next(
+                (
+                    payload[key]
+                    for key in ("datas", "data", "result")
+                    if isinstance(payload.get(key), dict)
+                ),
+                None,
+            )
+            if nested is None:
+                break
+            payload = nested
         if not new_token or not new_refresh_token:
             LOGGER.error("Akuvox token refresh failed: response did not include a new token pair.")
             return False
@@ -717,6 +749,10 @@ class AkuvoxApiClient:
                 if "err_code" in json_data:
                     if str(json_data["err_code"]) == "0":
                         self._last_api_error = None
+                        if isinstance(json_data.get("data"), dict):
+                            return json_data["data"]
+                        if isinstance(json_data.get("datas"), dict):
+                            return json_data["datas"]
                         return json_data
                     self._last_api_error = json_data
                     LOGGER.warning("Akuvox refresh API rejected %s: %s", url, json_data)
@@ -729,6 +765,7 @@ class AkuvoxApiClient:
                              error,
                              url)
         else:
+            self._last_api_error = {"http_status": response.status_code}
             LOGGER.debug("❌ Error: HTTP status code = %s for request to %s",
                          response.status_code,
                          url)
