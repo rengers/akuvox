@@ -554,7 +554,14 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self, config_entry: config_entries.ConfigEntry):
         """Initialize options flow."""
-        self.config_entry = config_entry
+        self._config_entry = config_entry
+
+    @property
+    def config_entry(self) -> config_entries.ConfigEntry:
+        """Return the config entry for old and current Home Assistant versions."""
+        if hasattr(self, "_config_entry"):
+            return self._config_entry
+        return super().config_entry
 
     async def async_step_init(self, user_input=None):
         """Initialize the options flow."""
