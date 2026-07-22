@@ -30,6 +30,7 @@ class AkuvoxData:
     auth_token: str = ""
     token: str = ""
     refresh_token: str = ""
+    refresh_on_first_login: bool = True
     auth_mode: str = ""
     login_user: str = ""
     password_hash: str = ""
@@ -50,6 +51,7 @@ class AkuvoxData:
                  auth_token: str = None, # type: ignore
                  token: str = None, # type: ignore
                  refresh_token: str = None, # type: ignore
+                 refresh_on_first_login: bool = True,
                  auth_mode: str = None, # type: ignore
                  login_user: str = None, # type: ignore
                  password_hash: str = None, # type: ignore
@@ -63,6 +65,7 @@ class AkuvoxData:
         self.auth_token = auth_token if auth_token else self.get_value_for_key(entry, "auth_token", self.host) # type: ignore
         self.token = token if token else self.get_value_for_key(entry, "token", self.token) # type: ignore
         self.refresh_token = refresh_token if refresh_token else self.get_value_for_key(entry, "refresh_token", self.refresh_token) # type: ignore
+        self.refresh_on_first_login = refresh_on_first_login if refresh_on_first_login is not None else bool(self.get_value_for_key(entry, "refresh_on_first_login", True)) # type: ignore
         self.auth_mode = auth_mode if auth_mode else self.get_value_for_key(entry, "auth_mode", self.auth_mode) # type: ignore
         self.login_user = login_user if login_user else self.get_value_for_key(entry, "login_user", self.login_user) # type: ignore
         self.password_hash = password_hash if password_hash else self.get_value_for_key(entry, "password_hash", self.password_hash) # type: ignore
@@ -266,6 +269,7 @@ class AkuvoxData:
             "token": self.token,
             "auth_token": self.auth_token,
             "refresh_token": self.refresh_token,
+            "refresh_on_first_login": self.refresh_on_first_login,
             "camera_data": self.camera_data,
             "door_relay_data": self.door_relay_data,
             "door_keys_data": self.door_keys_data

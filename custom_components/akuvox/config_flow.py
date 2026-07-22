@@ -224,6 +224,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 "token": token,
                 "auth_token": auth_token,
                 "refresh_token": refresh_token,
+                "refresh_on_first_login": user_input.get("refresh_on_first_login", True),
                 "subdomain": subdomain
             }
 
@@ -255,9 +256,11 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                             }
                         )
 
-                    refresh_successful = await self.akuvox_api_client.async_refresh_token(
-                        reason="initial app-token validation"
-                    )
+                    refresh_successful = True
+                    if user_input.get("refresh_on_first_login", True):
+                        refresh_successful = await self.akuvox_api_client.async_refresh_token(
+                            reason="initial app-token validation"
+                        )
                     if refresh_successful is not True:
                         LOGGER.warning("⚠️ Initial app-token refresh validation failed. Continuing setup with the provided credentials.")
                     else:
@@ -322,6 +325,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 "host": host,
                 "token": token,
                 "refresh_token": refresh_token,
+                "refresh_on_first_login": user_input.get("refresh_on_first_login", True),
                 "subdomain": subdomain,
             }
 
@@ -334,9 +338,11 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                     auth_mode="family_member",
                     subdomain=subdomain,
                 )
-                refresh_successful = await self.akuvox_api_client.async_refresh_token(
-                    reason="initial family-member validation"
-                )
+                refresh_successful = True
+                if user_input.get("refresh_on_first_login", True):
+                    refresh_successful = await self.akuvox_api_client.async_refresh_token(
+                        reason="initial family-member validation"
+                    )
                 if refresh_successful is not True:
                     return self.async_show_form(
                         step_id="family_member_sign_in",
@@ -511,6 +517,10 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 msg=None,
                 default=user_input.get("refresh_token", DEFAULT_REFRESH_TOKEN),  # type: ignore
                 description="Optional: your SmartPlus account's refresh_token string"): str,
+            vol.Optional(
+                "refresh_on_first_login",
+                default=user_input.get("refresh_on_first_login", True),
+                description="Immediately rotate the captured token pair after sign-in (recommended)"): bool,
             vol.Optional("subdomain",
                          default="Default", # type: ignore
                          description="Manually set the regional API subdomain"):
@@ -536,6 +546,10 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 msg=None,
                 default=user_input.get("refresh_token", DEFAULT_REFRESH_TOKEN),  # type: ignore
                 description="Refresh token from the successful SmartPlus family-member login response"): str,
+            vol.Optional(
+                "refresh_on_first_login",
+                default=user_input.get("refresh_on_first_login", True),
+                description="Immediately rotate the captured token pair after sign-in (recommended)"): bool,
             vol.Optional("subdomain",
                          default=user_input.get("subdomain", "ucloud"),  # type: ignore
                          description="Regional API subdomain"):
@@ -651,6 +665,31 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             self.akuvox_api_client._data.wait_for_image_url = self.get_data_key_value("wait_for_image_url") # type: ignore
 
         errors = {}
+        refresh_on_first_login = user_input.get("refresh_on_first_login", True)
+        submitted_token = user_input.get("token", "").strip()
+        submitted_refresh_token = user_input.get("refresh_token", "").strip()
+        if refresh_on_first_login and submitted_token and submitted_refresh_token:
+            selected_subdomain = user_input.get("subdomain") or current_subdomain
+            self.akuvox_api_client.init_api_with_data(
+                hass=self.hass,
+                subdomain=selected_subdomain,
+                auth_mode=user_input.get("auth_mode", self.get_data_key_value("auth_mode", "app_tokens")),
+                auth_token=user_input.get("auth_token", "").strip(),
+                token=submitted_token,
+                refresh_token=submitted_refresh_token,
+                refresh_on_first_login=True,
+            )
+            if await self.akuvox_api_client.async_refresh_token(reason="configuration update"):
+                user_input = dict(user_input)
+                user_input["token"] = self.akuvox_api_client._data.token
+                user_input["refresh_token"] = self.akuvox_api_client._data.refresh_token
+            else:
+                errors["base"] = "Token refresh failed. Capture a fresh token pair from the same SmartPlus login and try again."
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=options_schema,
+                    errors=errors,
+                )
 
         # User wishes to use other SmartLife account tokens
         if user_input.get("override", False) is True:

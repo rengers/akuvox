@@ -30,6 +30,7 @@
                     "token": "Token",
                     "auth_token": "Auth Token",
                     "refresh_token": "Refresh Token (optional)",
+                    "refresh_on_first_login": "Immediately refresh credentials after sign-in",
                     "subdomain": "Manually set the regional API subdomain"
                 }
             },
@@ -39,6 +40,7 @@
                 "data": {
                     "token": "Family Member Token",
                     "refresh_token": "Family Member Refresh Token",
+                    "refresh_on_first_login": "Immediately refresh credentials after sign-in",
                     "subdomain": "Regional API subdomain"
                 }
             },
@@ -65,6 +67,7 @@
                     "auth_token": "Your SmartLife `auth_token` value",
                     "token": "Your SmartLife `token` value",
                     "refresh_token": "Your SmartLife `refresh_token` value",
+                    "refresh_on_first_login": "Refresh a newly submitted token pair immediately",
                     "subdomain": "Manually set the regional API subdomain",
                     "event_screenshot_options": "Screenshot URLS for `akuvox_door_update` events:"
                 }

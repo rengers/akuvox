@@ -42,6 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_config_entry_first_refresh()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await async_start_polling(hass)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
     return True
@@ -60,8 +61,6 @@ async def async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await async_stop_polling(hass)
     await async_unload_entry(hass, entry)
     await async_setup_entry(hass, entry)
-    await async_update_configuration(hass, entry)
-    await async_start_polling(hass)
 
 # Polling
 

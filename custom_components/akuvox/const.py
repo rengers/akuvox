@@ -478,6 +478,7 @@ TEMP_KEY_QR_HOST = "subdomain.akuvox.com"
 
 DATA_STORAGE_KEY = "akuvox_data_storage_key"
 LAST_TOKEN_REFRESH_KEY = "last_token_refresh"
+REFRESH_ON_FIRST_LOGIN_KEY = "refresh_on_first_login"
 TOKEN_REFRESH_INTERVAL_DAYS = 6
 
 CAPTURE_TIME_KEY = "CaptureTime"

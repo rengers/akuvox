@@ -36,6 +36,7 @@ from .const import (
     API_GET_PERSONAL_DOOR_LOG,
     API_REFRESH_TOKEN,
     LAST_TOKEN_REFRESH_KEY,
+    REFRESH_ON_FIRST_LOGIN_KEY,
     TOKEN_REFRESH_INTERVAL_DAYS,
 )
 
@@ -89,6 +90,10 @@ class AkuvoxApiClient:
         if stored_refresh_token:
             self._data.refresh_token = stored_refresh_token
 
+        stored_refresh_on_first_login = await self._data.async_get_stored_data_for_key(REFRESH_ON_FIRST_LOGIN_KEY)
+        if stored_refresh_on_first_login is not None:
+            self._data.refresh_on_first_login = bool(stored_refresh_on_first_login)
+
         stored_auth_mode = await self._data.async_get_stored_data_for_key("auth_mode")
         if stored_auth_mode:
             self._data.auth_mode = stored_auth_mode
@@ -134,7 +139,8 @@ class AkuvoxApiClient:
 
     async def async_stop_polling(self):
         """Stop polling the personal door log API."""
-        await self.door_log_poller.async_stop()
+        if hasattr(self, "door_log_poller"):
+            await self.door_log_poller.async_stop()
 
     def init_api_with_data(self,
                            hass: HomeAssistant,
@@ -143,6 +149,7 @@ class AkuvoxApiClient:
                            auth_token=None,
                            token=None,
                            refresh_token=None,
+                           refresh_on_first_login=None,
                            auth_mode=None,
                            login_user=None,
                            password_hash=None,
@@ -159,6 +166,7 @@ class AkuvoxApiClient:
                 auth_token=auth_token, # type: ignore
                 token=token, # type: ignore
                 refresh_token=refresh_token, # type: ignore
+                refresh_on_first_login=refresh_on_first_login,
                 auth_mode=auth_mode, # type: ignore
                 login_user=login_user, # type: ignore
                 password_hash=password_hash, # type: ignore
@@ -170,6 +178,7 @@ class AkuvoxApiClient:
             self._data.auth_token = auth_token if auth_token is not None else self._data.auth_token
             self._data.token = token if token is not None else self._data.token
             self._data.refresh_token = refresh_token if refresh_token is not None else self._data.refresh_token
+            self._data.refresh_on_first_login = refresh_on_first_login if refresh_on_first_login is not None else self._data.refresh_on_first_login
             self._data.auth_mode = auth_mode if auth_mode is not None else self._data.auth_mode
             self._data.login_user = login_user if login_user is not None else self._data.login_user
             self._data.password_hash = password_hash if password_hash is not None else self._data.password_hash
@@ -592,9 +601,8 @@ class AkuvoxApiClient:
         return None
 
     async def async_start_polling_personal_door_log(self):
-        """Poll the server contineously for the latest personal door log."""
-        # Make sure only 1 instance of the door log polling is running
-        self.hass.async_create_task(self.async_retrieve_personal_door_log())
+        """Poll the server continuously for the latest personal door log."""
+        await self.async_start_polling()
 
     async def async_retrieve_personal_door_log(self) -> bool:
         """Request and parse the user's door log every 2 seconds."""
@@ -871,6 +879,7 @@ class AkuvoxApiClient:
         self._data.auth_token = value if key == "auth_token" else self._data.auth_token
         self._data.token = value if key == "token" else self._data.token
         self._data.refresh_token = value if key == "refresh_token" else self._data.refresh_token
+        self._data.refresh_on_first_login = value if key == "refresh_on_first_login" else self._data.refresh_on_first_login
         self._data.wait_for_image_url = value if key == "wait_for_image_url" else self._data.wait_for_image_url
 
     async def async_store_tokens(self, update_last_refresh: bool) -> None:
@@ -881,6 +890,7 @@ class AkuvoxApiClient:
         await self._data.async_set_stored_data_for_key("auth_token", self._data.auth_token)
         await self._data.async_set_stored_data_for_key("token", self._data.token)
         await self._data.async_set_stored_data_for_key("refresh_token", self._data.refresh_token)
+        await self._data.async_set_stored_data_for_key(REFRESH_ON_FIRST_LOGIN_KEY, self._data.refresh_on_first_login)
         if update_last_refresh:
             await self._data.async_set_stored_data_for_key(LAST_TOKEN_REFRESH_KEY, int(time.time()))
 
