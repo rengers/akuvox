@@ -602,7 +602,7 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                 default=self.get_data_key_value("auth_mode", "app_tokens"),
             ): vol.In({
                 "app_tokens": "App tokens",
-                "family_member": "Family-member tokens",
+                "family_member": "Family-member email/password",
             }),
             vol.Optional("country",
                          default=default_country_name,
@@ -622,6 +622,12 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional("refresh_token",
                          default=self.get_data_key_value("refresh_token", "") # type: ignore
             ): str,
+            vol.Optional("family_email",
+                         default="",
+                         description="Family-member email for re-authentication"): str,
+            vol.Optional("family_password",
+                         default="",
+                         description="Family-member password for re-authentication"): str,
             vol.Optional("subdomain",
                 default=current_subdomain, # type: ignore
                 description="Manually set the regional API subdomain"):
@@ -663,6 +669,42 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
 
         errors = {}
         refresh_on_first_login = user_input.get("refresh_on_first_login", True)
+        family_email = user_input.get("family_email", "").strip()
+        family_password = user_input.get("family_password", "")
+        selected_auth_mode = user_input.get(
+            "auth_mode", self.get_data_key_value("auth_mode", "app_tokens")
+        )
+        if selected_auth_mode == "family_member" and family_email and family_password:
+            login_user = helpers.obfuscate_login_identifier(family_email.lower())
+            password_hash = helpers.get_password_hash(family_password)
+            selected_subdomain = user_input.get("subdomain") or current_subdomain
+            if await self.akuvox_api_client.async_family_member_login(
+                hass=self.hass,
+                login_user=login_user,
+                password_hash=password_hash,
+                subdomain=selected_subdomain,
+            ):
+                if await self.akuvox_api_client.async_refresh_token(
+                    reason="family-member configuration re-authentication"
+                ):
+                    user_input = dict(user_input)
+                    user_input.update({
+                        "auth_mode": "family_member",
+                        "login_user": login_user,
+                        "password_hash": password_hash,
+                        "host": self.akuvox_api_client._data.host,
+                        "token": self.akuvox_api_client._data.token,
+                        "refresh_token": self.akuvox_api_client._data.refresh_token,
+                    })
+                else:
+                    errors["base"] = "Family-member login succeeded, but token rotation failed."
+            else:
+                errors["base"] = "Family-member login failed. Check the email, password, and subdomain."
+            if errors:
+                return self.async_show_form(
+                    step_id="init", data_schema=options_schema, errors=errors
+                )
+
         submitted_token = user_input.get("token", "").strip()
         submitted_refresh_token = user_input.get("refresh_token", "").strip()
         if refresh_on_first_login and submitted_token and submitted_refresh_token:
