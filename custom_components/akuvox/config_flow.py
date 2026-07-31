@@ -319,7 +319,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             subdomain: str = user_input.get("subdomain", "Default")
             subdomain = subdomain if subdomain != "Default" else "ucloud"
 
-            login_user = helpers.obfuscate_login_identifier(email.lower())
+            login_user = user_input.get("login_user", "").strip() or helpers.obfuscate_login_identifier(email.lower())
             
 
             self.data = {
@@ -546,6 +546,11 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 description="Captured `passwd` value from the SmartPlus family-member login request",
             ): str,
             vol.Optional(
+                "login_user",
+                default=user_input.get("login_user", ""),
+                description="Optional captured `user` query value; leave blank to derive it from the email",
+            ): str,
+            vol.Optional(
                 "subdomain",
                 default=user_input.get("subdomain", "ucloud"),  # type: ignore
                 description="Regional API subdomain",
@@ -628,6 +633,9 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional("family_passwd",
                          default="",
                          description="Captured SmartPlus `passwd` value for re-authentication"): str,
+            vol.Optional("family_user",
+                         default="",
+                         description="Optional captured SmartPlus `user` query value"): str,
             vol.Optional("subdomain",
                 default=current_subdomain, # type: ignore
                 description="Manually set the regional API subdomain"):
@@ -675,7 +683,7 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             "auth_mode", self.get_data_key_value("auth_mode", "app_tokens")
         )
         if selected_auth_mode == "family_member" and family_email and family_passwd:
-            login_user = helpers.obfuscate_login_identifier(family_email.lower())
+            login_user = user_input.get("family_user", "").strip() or helpers.obfuscate_login_identifier(family_email.lower())
             password_hash = family_passwd
             selected_subdomain = user_input.get("subdomain") or current_subdomain
             if await self.akuvox_api_client.async_family_member_login(

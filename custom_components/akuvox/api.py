@@ -740,7 +740,7 @@ class AkuvoxApiClient:
                             return json_data["datas"]
                         return json_data
                     self._last_api_error = json_data
-                    LOGGER.warning("Akuvox API rejected %s: %s", url, json_data)
+                    LOGGER.warning("Akuvox API rejected %s: %s", url.split("?", 1)[0], json_data)
                     return None
 
                 # Temp key requests
@@ -751,7 +751,7 @@ class AkuvoxApiClient:
                             return json_data["data"]
                         return json_data
                     self._last_api_error = json_data
-                    LOGGER.warning("Akuvox API rejected %s: %s", url, json_data)
+                    LOGGER.warning("Akuvox API rejected %s: %s", url.split("?", 1)[0], json_data)
                     return []
 
                 if "err_code" in json_data:
