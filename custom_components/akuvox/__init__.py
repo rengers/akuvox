@@ -110,20 +110,18 @@ async def async_update_configuration(hass: HomeAssistant, entry: ConfigEntry) ->
             coordinator: AkuvoxDataUpdateCoordinator = hass.data[DOMAIN][entry.entry_id]
             client: AkuvoxApiClient = coordinator.client
 
+            stored_tokens = {
+                key: await client._data.async_get_stored_data_for_key(key)
+                for key in ("token", "refresh_token")
+            }
+
             LOGGER.debug("Configured values:")
             for key, value in updated_options.items():
                 #                           value=value)
                 if value is not None:
+                    if key in stored_tokens and stored_tokens[key]:
+                        value = stored_tokens[key]
                     client.update_data(key, value)
-                    if key in [
-                        "auth_mode",
-                        "auth_token",
-                        "token",
-                        "refresh_token",
-                        "login_user",
-                        "password_hash",
-                    ]:
-                        await client._data.async_set_stored_data_for_key(key, value)
                     str_value: str = str(value)
                     if key in ["auth_token", "token", "refresh_token", "password_hash"]:
                         length: int = len(str_value)
