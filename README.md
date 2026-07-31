@@ -226,17 +226,15 @@ Sigining in using your SmartLife app tokens will allow you to remain signed in t
 1. During setup the integration will immediately call Akuvox's `refresh_token` API and then perform a normal read-only account/device fetch to verify that the rotated credentials work before the entry is created. Successful refreshes are logged in Home Assistant.
 <img src="https://user-images.githubusercontent.com/1849295/269958871-071008db-c2d8-4455-a612-eb0a9721ea39.png" width="400">
 
-### Method 3: Family Member Tokens
+### Method 3: Family Member Email + passwd Token
 
-Use this when you created a separate SmartPlus family-member account with its own email login.
+Use this when you created a separate SmartPlus family-member account with its own email login. Akuvox's current family endpoint does not accept the normal account password from Home Assistant; it expects the obfuscated email plus the captured `passwd` request value from the SmartPlus app.
 
-1. Capture the successful family-member `/login` response with Charles/mitmproxy.
+1. Capture a successful family-member `/login` request with Charles/mitmproxy.
 
-1. Copy the `token` and `refresh_token` values from that response.
+1. In Home Assistant select `Family Member Email + passwd Token`. Enter the family-member email, paste the request's `passwd` value unchanged, and select the regional subdomain.
 
-1. In Home Assistant select `Family Member Tokens`, enter the captured `token`, `refresh_token`, and the regional subdomain, then click `SUBMIT`.
-
-1. During setup the integration immediately calls Akuvox's `refresh_token` API to verify that rotation works for the family-member session before creating the entry.
+1. During setup the integration calls Akuvox's login and refresh-token APIs, then stores the resulting token pair.
 
 ### You should now have one device per Akuvox door camera with a camera and door relay button/s entity
 

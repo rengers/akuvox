@@ -56,7 +56,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         sign_in_options = [
             selector.SelectOptionDict(value="sms", label="1. SMS Verification (Recommended)"),
             selector.SelectOptionDict(value="app_tokens", label="2. App Tokens (Advanced)"),
-            selector.SelectOptionDict(value="family_tokens", label="3. Family Member Email/Password"),
+            selector.SelectOptionDict(value="family_tokens", label="3. Family Member Email + passwd token"),
         ]
         data_schema = vol.Schema({
             vol.Required(
@@ -92,7 +92,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         sms_sign_in = "Continue sign-in via SMS Verification"
         app_tokens_sign_in = "Sign-in via app tokens"
-        family_member_sign_in = "Sign-in via family member email/password"
+        family_member_sign_in = "Sign-in via family member email + passwd token"
         data_schema = {
             "warning_option_selection": selector.selector({
                 "select": {
@@ -315,12 +315,12 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = self.get_family_member_sign_in_schema(user_input)
         if user_input is not None:
             email: str = user_input.get("email", "").strip()
-            password: str = user_input.get("password", "")
+            password_hash: str = user_input.get("password_hash", "").strip()
             subdomain: str = user_input.get("subdomain", "Default")
             subdomain = subdomain if subdomain != "Default" else "ucloud"
 
             login_user = helpers.obfuscate_login_identifier(email.lower())
-            password_hash = helpers.get_password_hash(password)
+            
 
             self.data = {
                 "auth_mode": "family_member",
@@ -329,7 +329,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 "subdomain": subdomain,
             }
 
-            if all(len(value) > 0 for value in (email, password)):
+            if all(len(value) > 0 for value in (email, password_hash)):
                 login_successful = await self.akuvox_api_client.async_family_member_login(
                     hass=self.hass,
                     login_user=login_user,
@@ -540,10 +540,10 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 description="Family-member email address",
             ): str,
             vol.Required(
-                "password",
+                "password_hash",
                 msg=None,
-                default=user_input.get("password", ""),
-                description="Family-member password",
+                default=user_input.get("password_hash", ""),
+                description="Captured `passwd` value from the SmartPlus family-member login request",
             ): str,
             vol.Optional(
                 "subdomain",
@@ -602,7 +602,7 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                 default=self.get_data_key_value("auth_mode", "app_tokens"),
             ): vol.In({
                 "app_tokens": "App tokens",
-                "family_member": "Family-member email/password",
+                "family_member": "Family-member email + passwd token",
             }),
             vol.Optional("country",
                          default=default_country_name,
@@ -625,9 +625,9 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional("family_email",
                          default="",
                          description="Family-member email for re-authentication"): str,
-            vol.Optional("family_password",
+            vol.Optional("family_passwd",
                          default="",
-                         description="Family-member password for re-authentication"): str,
+                         description="Captured SmartPlus `passwd` value for re-authentication"): str,
             vol.Optional("subdomain",
                 default=current_subdomain, # type: ignore
                 description="Manually set the regional API subdomain"):
@@ -670,13 +670,13 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
         errors = {}
         refresh_on_first_login = user_input.get("refresh_on_first_login", True)
         family_email = user_input.get("family_email", "").strip()
-        family_password = user_input.get("family_password", "")
+        family_passwd = user_input.get("family_passwd", "")
         selected_auth_mode = user_input.get(
             "auth_mode", self.get_data_key_value("auth_mode", "app_tokens")
         )
-        if selected_auth_mode == "family_member" and family_email and family_password:
+        if selected_auth_mode == "family_member" and family_email and family_passwd:
             login_user = helpers.obfuscate_login_identifier(family_email.lower())
-            password_hash = helpers.get_password_hash(family_password)
+            password_hash = family_passwd
             selected_subdomain = user_input.get("subdomain") or current_subdomain
             if await self.akuvox_api_client.async_family_member_login(
                 hass=self.hass,
@@ -699,7 +699,7 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                 else:
                     errors["base"] = "Family-member login succeeded, but token rotation failed."
             else:
-                errors["base"] = "Family-member login failed. Check the email, password, and subdomain."
+                errors["base"] = "Family-member login failed. Check the email, passwd token, and subdomain."
             if errors:
                 return self.async_show_form(
                     step_id="init", data_schema=options_schema, errors=errors

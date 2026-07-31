@@ -311,7 +311,7 @@ class AkuvoxApiClient:
         password_hash: str,
         subdomain: str,
     ) -> bool:
-        """Sign in using the family-member email/login-passwd flow."""
+        """Sign in using the family-member email and captured passwd flow."""
         self.init_api_with_data(
             hass=hass,
             subdomain=subdomain,
