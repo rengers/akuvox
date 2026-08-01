@@ -35,12 +35,12 @@
                 }
             },
             "family_member_sign_in": {
-                "title": "Family Member Tokens",
-                "description": "Use the `token` and `refresh_token` from the successful SmartPlus family-member `/login` response.",
+                "title": "Family Member Sign-In",
+                "description": "Sign in with the family-member email and password. The password is hashed locally and never stored as plaintext.",
                 "data": {
-                    "token": "Family Member Token",
-                    "refresh_token": "Family Member Refresh Token",
-                    "refresh_on_first_login": "Immediately refresh credentials after sign-in",
+                    "email": "Family-member email",
+                    "password": "Family-member password",
+                    "login_user": "SmartPlus user value (optional)",
                     "subdomain": "Regional API subdomain"
                 }
             },
@@ -59,17 +59,18 @@
     "options": {
         "step": {
             "init": {
-                "title": "SmartPlus User Tokens & Event Configuration",
-                "description": "If you signed into the SmartPlus app on your device after adding the integration, you can update your user tokens below. This will allow Home Assistant to communicate with Akuvox's servers while you remain signed in on your device.\n\nPlease refer to the documentation for instructions on how to extract your token string.",
+                "title": "Akuvox SmartPlus Configuration",
+                "description": "Update authentication and event behavior. Family-member credentials are used only to obtain a fresh token pair and are not stored as plaintext.",
                 "data": {
-                    "country": "The country registered in your Akuvox SmartPlus account",
-                    "override": "Use the following SmartLife account tokens:",
-                    "auth_token": "Your SmartLife `auth_token` value",
-                    "token": "Your SmartLife `token` value",
-                    "refresh_token": "Your SmartLife `refresh_token` value",
-                    "refresh_on_first_login": "Refresh a newly submitted token pair immediately",
-                    "subdomain": "Manually set the regional API subdomain",
-                    "event_screenshot_options": "Screenshot URLS for `akuvox_door_update` events:"
+                    "auth_mode": "Authentication method",
+                    "auth_token": "App auth token",
+                    "token": "App token",
+                    "refresh_token": "Refresh token",
+                    "family_email": "Family-member email",
+                    "family_password": "Family-member password",
+                    "family_user": "SmartPlus user value (optional)",
+                    "subdomain": "Regional API subdomain",
+                    "event_screenshot_options": "Door-event screenshot behavior"
                 }
             }
         }

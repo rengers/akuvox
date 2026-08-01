@@ -315,7 +315,7 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = self.get_family_member_sign_in_schema(user_input)
         if user_input is not None:
             email: str = user_input.get("email", "").strip()
-            password: str = user_input.get("password_hash", "")
+            password: str = user_input.get("password", "")
             subdomain: str = user_input.get("subdomain", "Default")
             subdomain = subdomain if subdomain != "Default" else "ucloud"
 
@@ -540,9 +540,9 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 description="Family-member email address",
             ): str,
             vol.Required(
-                "password_hash",
+                "password",
                 msg=None,
-                default=user_input.get("password_hash", ""),
+                default=user_input.get("password", ""),
                 description="Family-member password (hashed locally; never logged)",
             ): str,
             vol.Optional(
@@ -580,240 +580,126 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
         return super().config_entry
 
     async def async_step_init(self, user_input=None):
-        """Initialize the options flow."""
-        # Define the options schema
-        config_options = dict(self.config_entry.options)
-        config_data = dict(self.config_entry.data)
-
+        """Configure authentication and event behavior."""
+        current_subdomain = self.get_data_key_value("subdomain", "ucloud")
+        if current_subdomain == "Default":
+            current_subdomain = "ucloud"
+        subdomain_options = [subdomain for subdomain in SUBDOMAINS_LIST if subdomain != "Default"]
         event_screenshot_options = {
-            "asap": "Receive events once generated, without waiting for camera screenshot URLs.",
-            "wait": "Wait for camera screenshot URLs to become available before triggering the event (typically adds a delay of 0-3 seconds)."
+            "asap": "Receive events immediately without waiting for screenshots.",
+            "wait": "Wait for camera screenshots before sending events.",
         }
-
-        default_country_name_code = helpers.find_country_name_code(config_data.get('country_code', self.hass.config.country))
-        default_country_name = LOCATIONS_DICT.get(default_country_name_code, {}).get("country") # type: ignore
-        default_subdomain = LOCATIONS_DICT.get(default_country_name_code, {}).get("subdomain") # type: ignore
-        subdomain_list = list(SUBDOMAINS_LIST)
-        del subdomain_list[0]
-        current_subdomain = self.get_data_key_value("subdomain") or default_subdomain
-
-        country_names_list:list = []
-        for _country, country_dict in LOCATIONS_DICT.items():
-            country_names_list.append(country_dict.get("country"))
-
         options_schema = vol.Schema({
-            vol.Optional(
+            vol.Required(
                 "auth_mode",
                 default=self.get_data_key_value("auth_mode", "app_tokens"),
             ): vol.In({
                 "app_tokens": "App tokens",
-                "family_member": "Family-member email + password",
+                "family_member": "Family-member email and password",
             }),
-            vol.Optional("country",
-                         default=default_country_name,
-                         description="Your country code"):
-                         selector.SelectSelector(
-                             selector.SelectSelectorConfig(
-                                 options=country_names_list,
-                                 mode=selector.SelectSelectorMode.DROPDOWN,
-                                 custom_value=False),
-                                 ),
-            vol.Optional("auth_token",
-                         default=self.get_data_key_value("auth_token", "") # type: ignore
-            ): str,
-            vol.Optional("token",
-                         default=self.get_data_key_value("token", "") # type: ignore
-            ): str,
-            vol.Optional("refresh_token",
-                         default=self.get_data_key_value("refresh_token", "") # type: ignore
-            ): str,
-            vol.Optional("family_email",
-                         default="",
-                         description="Family-member email for re-authentication"): str,
-            vol.Optional("family_passwd",
-                         default="",
-                         description="Family-member password for re-authentication"): str,
-            vol.Optional("family_user",
-                         default="",
-                         description="Optional SmartPlus `user` value"): str,
-            vol.Optional("subdomain",
-                default=current_subdomain, # type: ignore
-                description="Manually set the regional API subdomain"):
-                selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=subdomain_list,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                        custom_value=True),
-                        ),
-            vol.Required("event_screenshot_options",
-                         default=self.get_data_key_value("event_screenshot_options", "asap") # type: ignore
+            vol.Optional("auth_token", default=self.get_data_key_value("auth_token", "")): str,
+            vol.Optional("token", default=self.get_data_key_value("token", "")): str,
+            vol.Optional("refresh_token", default=self.get_data_key_value("refresh_token", "")): str,
+            vol.Optional("family_email", default=""): str,
+            vol.Optional("family_password", default=""): str,
+            vol.Optional("family_user", default=""): str,
+            vol.Required("subdomain", default=current_subdomain): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=subdomain_options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    custom_value=False,
+                )
+            ),
+            vol.Required(
+                "event_screenshot_options",
+                default=self.get_data_key_value("event_screenshot_options", "asap"),
             ): vol.In(event_screenshot_options),
         })
 
-        # Show the form with the current options
         if user_input is None:
+            return self.async_show_form(step_id="init", data_schema=options_schema)
+
+        selected_auth_mode = user_input["auth_mode"]
+        selected_subdomain = user_input["subdomain"]
+        coordinator = next(iter(self.hass.data[DOMAIN].values()), None)
+        if coordinator is None:
             return self.async_show_form(
                 step_id="init",
                 data_schema=options_schema,
-                description_placeholders=user_input,
-                last_step=True
+                errors={"base": "Integration is not ready. Restart Home Assistant and try again."},
             )
 
-        wait_for_image_url = True if user_input.get("event_screenshot_options", "asap") == "wait" else False
+        self.akuvox_api_client = coordinator.client
+        saved_options = {
+            "auth_mode": selected_auth_mode,
+            "auth_token": user_input.get("auth_token", "").strip(),
+            "token": user_input.get("token", "").strip(),
+            "refresh_token": user_input.get("refresh_token", "").strip(),
+            "subdomain": selected_subdomain,
+            "event_screenshot_options": user_input["event_screenshot_options"],
+            "wait_for_image_url": user_input["event_screenshot_options"] == "wait",
+        }
 
-        # API client
-        if self.akuvox_api_client is None:
-            coordinator: AkuvoxDataUpdateCoordinator
-            for _key, value in self.hass.data[DOMAIN].items():
-                coordinator = value
-            self.akuvox_api_client = coordinator.client
-            self.akuvox_api_client._data.subdomain = current_subdomain # type: ignore
-            self.akuvox_api_client._data.host = self.get_data_key_value("host") # type: ignore
-            self.akuvox_api_client._data.auth_token = self.get_data_key_value("auth_token") # type: ignore
-            self.akuvox_api_client._data.token = self.get_data_key_value("token") # type: ignore
-            self.akuvox_api_client._data.refresh_token = self.get_data_key_value("refresh_token") # type: ignore
-            self.akuvox_api_client._data.phone_number = self.get_data_key_value("phone_number") # type: ignore
-            self.akuvox_api_client._data.wait_for_image_url = self.get_data_key_value("wait_for_image_url") # type: ignore
+        if selected_auth_mode == "family_member":
+            family_email = user_input.get("family_email", "").strip()
+            family_password = user_input.get("family_password", "")
+            if not family_email or not family_password:
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=options_schema,
+                    errors={"base": "Enter the family-member email and password to re-authenticate."},
+                )
 
-        errors = {}
-        refresh_on_first_login = user_input.get("refresh_on_first_login", True)
-        family_email = user_input.get("family_email", "").strip()
-        family_passwd = user_input.get("family_passwd", "")
-        selected_auth_mode = user_input.get(
-            "auth_mode", self.get_data_key_value("auth_mode", "app_tokens")
-        )
-        if selected_auth_mode == "family_member" and family_email and family_passwd:
-            login_user = user_input.get("family_user", "").strip() or helpers.obfuscate_login_identifier(family_email)
-            password_hash = helpers.get_password_hash(family_passwd)
-            selected_subdomain = user_input.get("subdomain") or current_subdomain
-            if await self.akuvox_api_client.async_family_member_login(
+            login_user = user_input.get("family_user", "").strip()
+            login_user = login_user or helpers.obfuscate_login_identifier(family_email)
+            password_hash = helpers.get_password_hash(family_password)
+            login_successful = await self.akuvox_api_client.async_family_member_login(
                 hass=self.hass,
                 login_user=login_user,
                 password_hash=password_hash,
                 subdomain=selected_subdomain,
-            ):
-                if await self.akuvox_api_client.async_refresh_token(
-                    reason="family-member configuration re-authentication"
-                ):
-                    user_input = dict(user_input)
-                    user_input.update({
-                        "auth_mode": "family_member",
-                        "login_user": login_user,
-                        "password_hash": password_hash,
-                        "host": self.akuvox_api_client._data.host,
-                        "token": self.akuvox_api_client._data.token,
-                        "refresh_token": self.akuvox_api_client._data.refresh_token,
-                    })
-                else:
-                    errors["base"] = "Family-member login succeeded, but token rotation failed."
-            else:
-                errors["base"] = "Family-member login failed. Check the email, password, and subdomain."
-            if errors:
-                return self.async_show_form(
-                    step_id="init", data_schema=options_schema, errors=errors
-                )
-
-        submitted_token = user_input.get("token", "").strip()
-        submitted_refresh_token = user_input.get("refresh_token", "").strip()
-        if refresh_on_first_login and submitted_token and submitted_refresh_token:
-            selected_subdomain = user_input.get("subdomain") or current_subdomain
-            self.akuvox_api_client.init_api_with_data(
-                hass=self.hass,
-                subdomain=selected_subdomain,
-                auth_mode=user_input.get("auth_mode", self.get_data_key_value("auth_mode", "app_tokens")),
-                auth_token=user_input.get("auth_token", "").strip(),
-                token=submitted_token,
-                refresh_token=submitted_refresh_token,
-                refresh_on_first_login=True,
             )
-            if await self.akuvox_api_client.async_refresh_token(reason="configuration update"):
-                user_input = dict(user_input)
-                user_input["token"] = self.akuvox_api_client._data.token
-                user_input["refresh_token"] = self.akuvox_api_client._data.refresh_token
-            else:
-                errors["base"] = "Token refresh failed. Capture a fresh token pair from the same SmartPlus login and try again."
+            if not login_successful or not await self.akuvox_api_client.async_refresh_token(
+                reason="family-member configuration re-authentication"
+            ):
                 return self.async_show_form(
                     step_id="init",
                     data_schema=options_schema,
-                    errors=errors,
+                    errors={"base": "Family-member login failed. Check the email, password, and region."},
                 )
 
-        # User wishes to use other SmartLife account tokens
-        if user_input.get("override", False) is True:
-            LOGGER.debug("Use custom token strings...")
-            if await self.akuvox_api_client.async_init_api() is True:
-
-                # Retrieve device data
-                await self.akuvox_api_client.async_retrieve_user_data_with_tokens(
-                    user_input["auth_token"],
-                    user_input["token"])
-                devices_json = self.akuvox_api_client.get_devices_json()
-                if devices_json is not None and all(key in devices_json for key in (
-                    "camera_data",
-                    "door_relay_data",
-                    "door_keys_data")
-                ):
-                    camera_data = devices_json["camera_data"]
-                    door_relay_data = devices_json["door_relay_data"]
-                    door_keys_data = devices_json["door_keys_data"]
-                    options_schema = vol.Schema({
-                        vol.Required("token", default=config_options.get("token", None)): str,
-                        vol.Optional("camera_data", default=camera_data): dict,
-                        vol.Optional("door_relay_data", default=door_relay_data): dict,
-                        vol.Optional("door_keys_data", default=door_keys_data): dict,
-                    })
-                else:
-                    errors["token"] = "Unable to receive device list. Check your token."
-            else:
-                errors["bad_tokens"] = "Unable to initialize API. Did you login again from your device? Try logging in/adding tokens again."
-
-            data_schema = {
-                vol.Optional(
-                    "auth_token",
-                    msg=None,
-                    default=user_input.get("auth_token", ""),
-                    description="Your SmartPlus user's auth_token."
-                ): str,
-                vol.Optional(
-                    "token",
-                    msg=None,
-                    default=user_input.get("token", ""),
-                    description="Your SmartPlus user's token."
-                ): str,
-                vol.Optional(
-                    "refresh_token",
-                    msg=None,
-                    default=user_input.get("refresh_token", ""),
-                    description="Your SmartPlus user's refresh_token."
-                ): str,
-                vol.Optional("subdomain",
-                    default="Default", # type: ignore
-                    description="Manually set the regional API subdomain"):
-                    selector.SelectSelector(
-                        selector.SelectSelectorConfig(
-                            options=SUBDOMAINS_LIST,
-                            mode=selector.SelectSelectorMode.DROPDOWN,
-                            custom_value=True),
-                            ),
-                vol.Required(
-                    "wait_for_image_url",
-                    msg=None,
-                    default=bool(wait_for_image_url) # type: ignore
-                ): bool
-            }
-            return self.async_show_form(
-                step_id="init",
-                data_schema=vol.Schema(data_schema),
-                errors=errors
+            saved_options.update({
+                "login_user": login_user,
+                "password_hash": password_hash,
+                "host": self.akuvox_api_client._data.host,
+                "token": self.akuvox_api_client._data.token,
+                "refresh_token": self.akuvox_api_client._data.refresh_token,
+            })
+        elif saved_options["token"] and saved_options["refresh_token"]:
+            self.akuvox_api_client.init_api_with_data(
+                hass=self.hass,
+                subdomain=selected_subdomain,
+                auth_mode="app_tokens",
+                auth_token=saved_options["auth_token"],
+                token=saved_options["token"],
+                refresh_token=saved_options["refresh_token"],
+                refresh_on_first_login=True,
             )
+            if not await self.akuvox_api_client.async_refresh_token(reason="configuration update"):
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=options_schema,
+                    errors={"base": "Token refresh failed. Enter a current token pair or use family-member login."},
+                )
+            saved_options.update({
+                "token": self.akuvox_api_client._data.token,
+                "refresh_token": self.akuvox_api_client._data.refresh_token,
+            })
 
-        # User input is valid, update the options
-        LOGGER.debug("Updating configuration...")
-        # user_input = None
-        return self.async_create_entry(
-            data=user_input, # type: ignore
-            title="",
-        )
+        saved_options = {
+            key: value for key, value in saved_options.items() if value not in (None, "")
+        }
+        return self.async_create_entry(title="", data=saved_options)
 
     def get_data_key_value(self, key, placeholder=None):
         """Get the value for a given key. Options flow 1st, Config flow 2nd."""
