@@ -311,7 +311,7 @@ class AkuvoxApiClient:
         password_hash: str,
         subdomain: str,
     ) -> bool:
-        """Sign in using the family-member email and captured passwd flow."""
+        """Sign in using the SmartPlus family-member password flow."""
         self.init_api_with_data(
             hass=hass,
             subdomain=subdomain,
@@ -321,16 +321,14 @@ class AkuvoxApiClient:
         )
         url = (
             f"https://gate.{subdomain}.akuvox.com:{REST_SERVER_PORT}/"
-            f"{API_LOGIN}?user={login_user}&passwd={password_hash}&id_code=(null)"
+            f"{API_LOGIN}?user={login_user}&passwd={password_hash}"
         )
         headers = {
             "Host": f"gate.{subdomain}.akuvox.com:{REST_SERVER_PORT}",
             "accept": "*/*",
             "x-auth-token": "",
             "api-version": "7.33",
-            "user-agent": "VBell/7.40.3 (iPhone; iOS 26.4.2; Scale/3.00)",
-            "priority": "u=3, i",
-            "accept-language": "en-US;q=1",
+            "user-agent": "Dalvik/2.1.0 (Linux; U; Android 15; SmartPlus)",
         }
         json_data = await self._async_api_wrapper(
             method="get",
@@ -763,7 +761,7 @@ class AkuvoxApiClient:
                             return json_data["datas"]
                         return json_data
                     self._last_api_error = json_data
-                    LOGGER.warning("Akuvox refresh API rejected %s: %s", url, json_data)
+                    LOGGER.warning("Akuvox API rejected %s: %s", url.split("?", 1)[0], json_data)
                     return None
 
                 LOGGER.warning("🤨 Response: %s", str(json_data))
