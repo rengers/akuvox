@@ -45,3 +45,7 @@ class DoorLogPoller:
                 await self._task
             except asyncio.CancelledError:
                 LOGGER.debug("Polling task cancelled")
+            except Exception as error:
+                LOGGER.debug("Polling task stopped while an API request was finishing: %s", error)
+            finally:
+                self._task = None

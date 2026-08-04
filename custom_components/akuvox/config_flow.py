@@ -262,13 +262,32 @@ class AkuvoxFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                             reason="initial app-token validation"
                         )
                     if refresh_successful is not True:
-                        LOGGER.warning("⚠️ Initial app-token refresh validation failed. Continuing setup with the provided credentials.")
-                    else:
-                        self.data["token"] = self.akuvox_api_client._data.token
-                        self.data["refresh_token"] = self.akuvox_api_client._data.refresh_token
+                        return self.async_show_form(
+                            step_id="app_tokens_sign_in",
+                            data_schema=vol.Schema(self.get_app_tokens_sign_in_schema(user_input)),
+                            description_placeholders=user_input,
+                            last_step=True,
+                            errors={
+                                "base": "Token refresh failed. Capture a current token pair from SmartPlus and try again."
+                            },
+                        )
 
-                    # Retrieve connected device data using the already validated token pair.
-                    await self.akuvox_api_client.async_retrieve_device_data()
+                    self.data["token"] = self.akuvox_api_client._data.token
+                    self.data["refresh_token"] = self.akuvox_api_client._data.refresh_token
+
+                    if not await self.akuvox_api_client.async_validate_credentials(
+                        reason="initial app-token validation"
+                    ):
+                        return self.async_show_form(
+                            step_id="app_tokens_sign_in",
+                            data_schema=vol.Schema(self.get_app_tokens_sign_in_schema(user_input)),
+                            description_placeholders=user_input,
+                            last_step=True,
+                            errors={
+                                "base": "Token refresh succeeded, but Akuvox rejected the refreshed credentials. Capture a current token pair and try again."
+                            },
+                        )
+
                     await self.akuvox_api_client.async_retrieve_temp_keys_data()
                     devices_json = self.akuvox_api_client.get_devices_json()
                     self.data.update(devices_json)
@@ -603,6 +622,7 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             vol.Optional("family_email", default=""): str,
             vol.Optional("family_password", default=""): str,
             vol.Optional("family_user", default=""): str,
+            vol.Optional("refresh_and_validate", default=True): bool,
             vol.Required("subdomain", default=current_subdomain): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=subdomain_options,
@@ -661,6 +681,8 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
             )
             if not login_successful or not await self.akuvox_api_client.async_refresh_token(
                 reason="family-member configuration re-authentication"
+            ) or not await self.akuvox_api_client.async_validate_credentials(
+                reason="family-member configuration re-authentication"
             ):
                 return self.async_show_form(
                     step_id="init",
@@ -675,7 +697,13 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                 "token": self.akuvox_api_client._data.token,
                 "refresh_token": self.akuvox_api_client._data.refresh_token,
             })
-        elif saved_options["token"] and saved_options["refresh_token"]:
+        elif user_input.get("refresh_and_validate", True):
+            if not saved_options["token"] or not saved_options["refresh_token"]:
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=options_schema,
+                    errors={"base": "Enter both an app token and refresh token before refreshing credentials."},
+                )
             self.akuvox_api_client.init_api_with_data(
                 hass=self.hass,
                 subdomain=selected_subdomain,
@@ -690,6 +718,14 @@ class AkuvoxOptionsFlowHandler(config_entries.OptionsFlow):
                     step_id="init",
                     data_schema=options_schema,
                     errors={"base": "Token refresh failed. Enter a current token pair or use family-member login."},
+                )
+            if not await self.akuvox_api_client.async_validate_credentials(
+                reason="configuration update"
+            ):
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=options_schema,
+                    errors={"base": "Token refresh succeeded, but the refreshed credentials could not access your Akuvox devices."},
                 )
             saved_options.update({
                 "token": self.akuvox_api_client._data.token,

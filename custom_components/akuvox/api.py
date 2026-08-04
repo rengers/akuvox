@@ -421,6 +421,15 @@ class AkuvoxApiClient:
         self._data.token = token
         return await self.async_retrieve_user_data()
 
+    async def async_validate_credentials(self, reason: str) -> bool:
+        """Confirm the active token pair can access the authenticated device API."""
+        if await self.async_retrieve_device_data():
+            LOGGER.info("Akuvox credentials validated successfully (%s).", reason)
+            return True
+
+        LOGGER.error("Akuvox credential validation failed (%s).", reason)
+        return False
+
     async def async_refresh_token(
         self,
         reason: str = "scheduled refresh",
@@ -605,15 +614,17 @@ class AkuvoxApiClient:
     async def async_retrieve_personal_door_log(self) -> bool:
         """Request and parse the user's door log every 2 seconds."""
         while True:
-            # Get the latest pesonal door log
-            json_data = await self.async_get_personal_door_log()
-            if json_data is not None:
-                new_door_log = await self._data.async_parse_personal_door_log(json_data)
-                if new_door_log is not None:
-                    # Fire HA event
-                    LOGGER.debug("🚪 New door open event occurred. Firing akuvox_door_update event")
-                    event_name = "akuvox_door_update"
-                    self.hass.bus.async_fire(event_name, new_door_log)
+            try:
+                json_data = await self.async_get_personal_door_log()
+                if json_data is not None:
+                    new_door_log = await self._data.async_parse_personal_door_log(json_data)
+                    if new_door_log is not None:
+                        LOGGER.debug("🚪 New door open event occurred. Firing akuvox_door_update event")
+                        self.hass.bus.async_fire("akuvox_door_update", new_door_log)
+            except asyncio.CancelledError:
+                raise
+            except AkuvoxApiClientError as error:
+                LOGGER.warning("Unable to poll the Akuvox door log: %s", error)
             await asyncio.sleep(2)  # Wait for 2 seconds before calling again
 
     async def async_get_personal_door_log(self):

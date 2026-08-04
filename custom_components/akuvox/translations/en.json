@@ -69,6 +69,7 @@
                     "family_email": "Family-member email",
                     "family_password": "Family-member password",
                     "family_user": "SmartPlus user value (optional)",
+                    "refresh_and_validate": "Refresh and validate credentials now",
                     "subdomain": "Regional API subdomain",
                     "event_screenshot_options": "Door-event screenshot behavior"
                 }
