@@ -26,16 +26,21 @@ async def async_setup_entry(hass, entry, async_add_devices):
     door_keys_data = device_data.get("door_keys_data", [])
     date_format = "%d-%m-%Y %H:%M:%S"
 
-    entities = [AkuvoxConnectionStatusSensor(client, entry)]
+    async_add_devices([AkuvoxConnectionStatusSensor(client, entry)])
+    entities = []
     for door_key_data in door_keys_data:
-        key_id = door_key_data["key_id"]
-        description = door_key_data["description"]
-        key_code=door_key_data["key_code"]
-        begin_time = datetime.strptime(str(door_key_data["begin_time"]), date_format)
-        end_time = datetime.strptime(str(door_key_data["end_time"]), date_format)
-        allowed_times=door_key_data["allowed_times"]
-        access_times=door_key_data["access_times"]
-        qr_code_url=door_key_data["qr_code_url"]
+        try:
+            key_id = door_key_data["key_id"]
+            description = door_key_data["description"]
+            key_code = door_key_data["key_code"]
+            begin_time = datetime.strptime(str(door_key_data["begin_time"]), date_format)
+            end_time = datetime.strptime(str(door_key_data["end_time"]), date_format)
+            allowed_times = door_key_data["allowed_times"]
+            access_times = door_key_data["access_times"]
+            qr_code_url = door_key_data["qr_code_url"]
+        except (KeyError, TypeError, ValueError) as error:
+            LOGGER.warning("Skipping invalid stored Akuvox temporary key: %s", error)
+            continue
 
         entities.append(
             AkuvoxTemporaryDoorKey(
@@ -52,7 +57,8 @@ async def async_setup_entry(hass, entry, async_add_devices):
             )
         )
 
-    async_add_devices(entities)
+    if entities:
+        async_add_devices(entities)
 
 class AkuvoxTemporaryDoorKey(SensorEntity, AkuvoxEntity):
     """Akuvox temporary door key class."""
