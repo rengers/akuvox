@@ -22,11 +22,11 @@ async def async_setup_entry(hass, entry, async_add_devices):
         coordinator = value
     client = coordinator.client
     store = storage.Store(hass, 1, DATA_STORAGE_KEY)
-    device_data: dict = await store.async_load() # type: ignore
-    door_keys_data = device_data["door_keys_data"]
+    device_data: dict = await store.async_load() or {} # type: ignore
+    door_keys_data = device_data.get("door_keys_data", [])
     date_format = "%d-%m-%Y %H:%M:%S"
 
-    entities = []
+    entities = [AkuvoxConnectionStatusSensor(client, entry)]
     for door_key_data in door_keys_data:
         key_id = door_key_data["key_id"]
         description = door_key_data["description"]
@@ -121,3 +121,31 @@ class AkuvoxTemporaryDoorKey(SensorEntity, AkuvoxEntity):
             'qr_code_url': self.qr_code_url,
             'expired': not self.is_key_active()
         }
+
+
+class AkuvoxConnectionStatusSensor(SensorEntity):
+    """Expose safe Akuvox connection diagnostics in Home Assistant."""
+
+    _attr_icon = "mdi:connection"
+
+    def __init__(self, client: AkuvoxApiClient, entry) -> None:
+        """Initialize the connection-status sensor."""
+        self.client = client
+        self._attr_unique_id = f"{entry.entry_id}_connection_status"
+        self._attr_name = "Connection status"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="Akuvox SmartPlus",
+            model=VERSION,
+            manufacturer=NAME,
+        )
+
+    @property
+    def native_value(self):
+        """Return the current authentication state."""
+        return self.client.get_connection_diagnostics()["authentication_status"]
+
+    @property
+    def extra_state_attributes(self):
+        """Return safe authentication and door-log details."""
+        return self.client.get_connection_diagnostics()

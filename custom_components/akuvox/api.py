@@ -6,6 +6,7 @@ import socket
 import json
 import time
 from typing import Any
+from urllib.parse import urlencode
 
 from homeassistant.core import HomeAssistant
 
@@ -70,6 +71,13 @@ class AkuvoxApiClient:
         self.hass = hass
         self._last_api_error: dict[str, Any] | None = None
         self._next_refresh_retry_at = 0
+        self._authentication_status = "unknown"
+        self._last_authentication_at: int | None = None
+        self._last_authentication_error: dict[str, Any] | None = None
+        self._door_log_status = "unknown"
+        self._last_door_log_at: int | None = None
+        self._last_door_log_error: dict[str, Any] | None = None
+        self._last_reported_door_log_error: dict[str, Any] | None = None
         if entry:
             LOGGER.debug("▶️ Initializing AkuvoxData from API client init")
             self._data = AkuvoxData(
@@ -319,10 +327,8 @@ class AkuvoxApiClient:
             login_user=login_user,
             password_hash=password_hash,
         )
-        url = (
-            f"https://gate.{subdomain}.akuvox.com:{REST_SERVER_PORT}/"
-            f"{API_LOGIN}?user={login_user}&passwd={password_hash}"
-        )
+        query = urlencode({"user": login_user, "passwd": password_hash})
+        url = f"https://gate.{subdomain}.akuvox.com:{REST_SERVER_PORT}/{API_LOGIN}?{query}"
         headers = {
             "Host": f"gate.{subdomain}.akuvox.com:{REST_SERVER_PORT}",
             "accept": "*/*",
@@ -337,10 +343,12 @@ class AkuvoxApiClient:
             data={},
         )
         if json_data is None:
-            LOGGER.error("❌ Family-member login failed.")
+            self._set_authentication_status("login_failed")
+            LOGGER.error("Akuvox family-member login failed: %s", self._safe_api_error())
             return False
 
         self._data.parse_sms_login_response(json_data)  # type: ignore
+        self._set_authentication_status("authenticated")
         if "rest_server_https" in json_data:
             self._data.host = json_data["rest_server_https"]
 
@@ -408,6 +416,7 @@ class AkuvoxApiClient:
         user_conf_data = await self.async_user_conf()
         if user_conf_data is not None:
             self._data.parse_userconf_data(user_conf_data) # type: ignore
+            self._set_authentication_status("authenticated")
             return True
         if _retry_after_refresh and self.has_token_error():
             LOGGER.warning("Akuvox device request rejected the current token; refreshing and retrying once.")
@@ -427,7 +436,8 @@ class AkuvoxApiClient:
             LOGGER.info("Akuvox credentials validated successfully (%s).", reason)
             return True
 
-        LOGGER.error("Akuvox credential validation failed (%s).", reason)
+        self._set_authentication_status("validation_failed")
+        LOGGER.error("Akuvox credential validation failed (%s): %s", reason, self._safe_api_error())
         return False
 
     async def async_refresh_token(
@@ -437,6 +447,7 @@ class AkuvoxApiClient:
     ) -> bool:
         """Refresh the current Akuvox token pair using the stored refresh token."""
         if not self._data.refresh_token:
+            self._set_authentication_status("refresh_unavailable")
             LOGGER.warning("Akuvox token refresh skipped: no refresh_token is available.")
             return False
 
@@ -479,9 +490,10 @@ class AkuvoxApiClient:
                             reason="post re-login refresh",
                             _retry_after_login=False,
                         )
-                LOGGER.error("Akuvox token refresh failed with API error: %s", self._last_api_error)
+                LOGGER.error("Akuvox token refresh failed with API error: %s", self._safe_api_error())
             else:
                 LOGGER.error("Akuvox token refresh failed: empty response.")
+            self._set_authentication_status("refresh_failed")
             return False
 
         payload = json_data
@@ -504,11 +516,13 @@ class AkuvoxApiClient:
                 break
             payload = nested
         if not new_token or not new_refresh_token:
+            self._set_authentication_status("refresh_failed")
             LOGGER.error("Akuvox token refresh failed: response did not include a new token pair.")
             return False
 
         self._data.token = new_token
         self._data.refresh_token = new_refresh_token
+        self._set_authentication_status("authenticated")
         await self.async_store_tokens(update_last_refresh=True)
         self._next_refresh_retry_at = 0
         LOGGER.info("Akuvox credentials refreshed successfully.")
@@ -612,11 +626,16 @@ class AkuvoxApiClient:
         await self.async_start_polling()
 
     async def async_retrieve_personal_door_log(self) -> bool:
-        """Request and parse the user's door log every 2 seconds."""
+        """Poll the user's door log without exceeding Akuvox rate limits."""
+        poll_delay = 10
+        maximum_poll_delay = 120
         while True:
             try:
                 json_data = await self.async_get_personal_door_log()
-                if json_data is not None:
+                if json_data is None:
+                    poll_delay = min(poll_delay * 2, maximum_poll_delay)
+                else:
+                    poll_delay = 10
                     new_door_log = await self._data.async_parse_personal_door_log(json_data)
                     if new_door_log is not None:
                         LOGGER.debug("🚪 New door open event occurred. Firing akuvox_door_update event")
@@ -624,8 +643,9 @@ class AkuvoxApiClient:
             except asyncio.CancelledError:
                 raise
             except AkuvoxApiClientError as error:
+                poll_delay = min(poll_delay * 2, maximum_poll_delay)
                 LOGGER.warning("Unable to poll the Akuvox door log: %s", error)
-            await asyncio.sleep(2)  # Wait for 2 seconds before calling again
+            await asyncio.sleep(poll_delay)
 
     async def async_get_personal_door_log(self):
         """Request the user's personal door log data."""
@@ -654,15 +674,21 @@ class AkuvoxApiClient:
                                                         headers=headers,
                                                         data=data) # type: ignore
 
-        # Response empty, try changing app type "single" <--> "community"
-        if json_data is not None and len(json_data) == 0:
+        if json_data == []:
+            app_type = self._data.app_type
             self.switch_activities_host()
             host = self.get_activities_host()
             url = f"https://{host}/{API_GET_PERSONAL_DOOR_LOG}"
-            json_data = await self._async_api_wrapper(method="get",
-                                                      url=url,
-                                                      headers=headers,
-                                                      data=data) # type: ignore
+            alternate_json_data = await self._async_api_wrapper(
+                method="get",
+                url=url,
+                headers=headers,
+                data=data,
+            )
+            if alternate_json_data:
+                json_data = alternate_json_data
+            else:
+                self._data.app_type = app_type
 
         if json_data is None and self.has_token_error():
             LOGGER.warning("Akuvox door log rejected the current token; refreshing and retrying once.")
@@ -674,11 +700,60 @@ class AkuvoxApiClient:
                                                           headers=headers,
                                                           data=data) # type: ignore
 
-        if json_data is not None and len(json_data) > 0:
+        if json_data is not None:
+            self._door_log_status = "available" if json_data else "no_recent_events"
+            self._last_door_log_at = int(time.time())
+            self._last_door_log_error = None
+            self._last_reported_door_log_error = None
             return json_data
 
-        LOGGER.error("❌ Unable to retrieve user's personal door log")
+        self._door_log_status = "error"
+        self._last_door_log_error = self._safe_api_error()
+        if self._last_door_log_error != self._last_reported_door_log_error:
+            LOGGER.error(
+                "Unable to retrieve Akuvox personal door log from %s: %s",
+                host,
+                self._last_door_log_error,
+            )
+            self._last_reported_door_log_error = self._last_door_log_error
+        else:
+            LOGGER.debug(
+                "Akuvox personal door log remains unavailable from %s: %s",
+                host,
+                self._last_door_log_error,
+            )
         return None
+
+    def _set_authentication_status(self, status: str) -> None:
+        """Record the latest authentication outcome for the diagnostic sensor."""
+        self._authentication_status = status
+        if status == "authenticated":
+            self._last_authentication_at = int(time.time())
+            self._last_authentication_error = None
+        else:
+            self._last_authentication_error = self._safe_api_error()
+
+    def _safe_api_error(self) -> dict[str, Any] | None:
+        """Return a log-safe summary of the most recent API failure."""
+        if not self._last_api_error:
+            return None
+        allowed_keys = {"code", "err_code", "http_status", "message", "result"}
+        return {
+            key: value
+            for key, value in self._last_api_error.items()
+            if key in allowed_keys and not isinstance(value, (dict, list))
+        }
+
+    def get_connection_diagnostics(self) -> dict[str, Any]:
+        """Return safe authentication and door-log diagnostics for Home Assistant."""
+        return {
+            "authentication_status": self._authentication_status,
+            "last_authenticated": self._last_authentication_at,
+            "last_authentication_error": self._last_authentication_error,
+            "door_log_status": self._door_log_status,
+            "last_door_log_response": self._last_door_log_at,
+            "last_door_log_error": self._last_door_log_error,
+        }
 
     ###################
     # Request Methods #

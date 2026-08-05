@@ -22,10 +22,10 @@ async def async_setup_entry(hass, entry, async_add_devices):
     client = coordinator.client
 
     store = storage.Store(hass, 1, DATA_STORAGE_KEY)
-    device_data: dict = await store.async_load() # type: ignore
-    door_relay_data = device_data["door_relay_data"]
+    device_data: dict = await store.async_load() or {} # type: ignore
+    door_relay_data = device_data.get("door_relay_data", [])
 
-    entities = []
+    entities = [AkuvoxRefreshCredentialsButton(client, entry)]
     for door_relay in door_relay_data:
         name = door_relay["name"]
         mac = door_relay["mac"]
@@ -43,6 +43,34 @@ async def async_setup_entry(hass, entry, async_add_devices):
         )
 
     async_add_devices(entities)
+
+
+class AkuvoxRefreshCredentialsButton(ButtonEntity):
+    """Refresh and validate Akuvox credentials on demand."""
+
+    _attr_icon = "mdi:refresh"
+
+    def __init__(self, client: AkuvoxApiClient, entry) -> None:
+        """Initialize the credential-refresh button."""
+        self._client = client
+        self._attr_unique_id = f"{entry.entry_id}_refresh_credentials"
+        self._attr_name = "Refresh credentials"
+        self._attr_device_info = DeviceInfo(
+            identifiers={(DOMAIN, entry.entry_id)},
+            name="Akuvox SmartPlus",
+            model=VERSION,
+            manufacturer=NAME,
+        )
+
+    async def async_press(self) -> None:
+        """Rotate credentials and confirm the new pair accesses the device API."""
+        if not await self._client.async_refresh_token(reason="manual UI refresh"):
+            LOGGER.error("Manual Akuvox credential refresh failed.")
+            return
+        if not await self._client.async_validate_credentials(reason="manual UI refresh"):
+            LOGGER.error("Manual Akuvox credential refresh rotated the token but validation failed.")
+            return
+        LOGGER.info("Manual Akuvox credential refresh and validation succeeded.")
 
 
 class AkuvoxDoorRelayEntity(ButtonEntity, AkuvoxEntity):
