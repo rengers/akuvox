@@ -6,7 +6,6 @@ import socket
 import json
 import time
 from typing import Any
-from urllib.parse import urlencode
 
 from homeassistant.core import HomeAssistant
 
@@ -340,16 +339,14 @@ class AkuvoxApiClient:
             login_user=login_user,
             password_hash=password_hash,
         )
-        query = urlencode(
-            {"user": login_user, "passwd": password_hash, "id_code": "(null)"}
-        )
+        query = f"user={login_user}&passwd={password_hash}&id_code=(null)"
         url = f"https://gate.{subdomain}.akuvox.com:{REST_SERVER_PORT}/{API_LOGIN}?{query}"
         headers = {
             "Host": f"gate.{subdomain}.akuvox.com:{REST_SERVER_PORT}",
             "accept": "*/*",
             "x-auth-token": "",
             "api-version": "7.33",
-            "user-agent": "VBell/7.40.3 (iPhone; iOS 26.4.2; Scale/3.00)",
+            "user-agent": "VBell/7.42.2 (iPhone; iOS 26.5.2; Scale/3.00)",
             "priority": "u=3, i",
             "accept-language": "en-US;q=1",
         }
