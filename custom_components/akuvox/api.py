@@ -89,7 +89,11 @@ class AkuvoxApiClient:
         """Initialize API configuration data."""
         stored_subdomain = await self._data.async_get_stored_data_for_key("subdomain")
         if stored_subdomain:
-            self._data.subdomain = stored_subdomain
+            if stored_subdomain == "ecloud" and self.hass.config.country == "US":
+                LOGGER.info("Migrating stale Akuvox ecloud region to ucloud for this U.S. installation.")
+            else:
+                self._data.subdomain = stored_subdomain
+        await self._data.async_set_stored_data_for_key("subdomain", self._data.subdomain)
 
         stored_host = await self._data.async_get_stored_data_for_key("host")
         if stored_host:
