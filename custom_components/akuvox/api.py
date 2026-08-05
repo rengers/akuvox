@@ -340,14 +340,18 @@ class AkuvoxApiClient:
             login_user=login_user,
             password_hash=password_hash,
         )
-        query = urlencode({"user": login_user, "passwd": password_hash})
+        query = urlencode(
+            {"user": login_user, "passwd": password_hash, "id_code": "(null)"}
+        )
         url = f"https://gate.{subdomain}.akuvox.com:{REST_SERVER_PORT}/{API_LOGIN}?{query}"
         headers = {
             "Host": f"gate.{subdomain}.akuvox.com:{REST_SERVER_PORT}",
             "accept": "*/*",
             "x-auth-token": "",
             "api-version": "7.33",
-            "user-agent": "Dalvik/2.1.0 (Linux; U; Android 15; SmartPlus)",
+            "user-agent": "VBell/7.40.3 (iPhone; iOS 26.4.2; Scale/3.00)",
+            "priority": "u=3, i",
+            "accept-language": "en-US;q=1",
         }
         json_data = await self._async_api_wrapper(
             method="get",
