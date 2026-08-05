@@ -87,6 +87,14 @@ class AkuvoxApiClient:
 
     async def async_init_api(self) -> bool:
         """Initialize API configuration data."""
+        stored_subdomain = await self._data.async_get_stored_data_for_key("subdomain")
+        if stored_subdomain:
+            self._data.subdomain = stored_subdomain
+
+        stored_host = await self._data.async_get_stored_data_for_key("host")
+        if stored_host:
+            self._data.host = stored_host
+
         stored_token = await self._data.async_get_stored_data_for_key("token")
         if stored_token:
             self._data.token = stored_token
@@ -972,6 +980,8 @@ class AkuvoxApiClient:
 
     async def async_store_tokens(self, update_last_refresh: bool) -> None:
         """Persist the active Akuvox tokens to Home Assistant storage."""
+        await self._data.async_set_stored_data_for_key("host", self._data.host)
+        await self._data.async_set_stored_data_for_key("subdomain", self._data.subdomain)
         await self._data.async_set_stored_data_for_key("auth_mode", self._data.auth_mode)
         await self._data.async_set_stored_data_for_key("login_user", self._data.login_user)
         await self._data.async_set_stored_data_for_key("password_hash", self._data.password_hash)
