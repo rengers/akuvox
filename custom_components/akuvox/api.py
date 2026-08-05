@@ -74,6 +74,7 @@ class AkuvoxApiClient:
         self._authentication_status = "unknown"
         self._last_authentication_at: int | None = None
         self._last_authentication_error: dict[str, Any] | None = None
+        self._last_refresh_error: dict[str, Any] | None = None
         self._door_log_status = "unknown"
         self._last_door_log_at: int | None = None
         self._last_door_log_error: dict[str, Any] | None = None
@@ -472,6 +473,7 @@ class AkuvoxApiClient:
             data=data,
         )
         if json_data is None:
+            self._last_refresh_error = self._safe_api_error()
             if self._last_api_error:
                 if (
                     _retry_after_login
@@ -522,6 +524,7 @@ class AkuvoxApiClient:
 
         self._data.token = new_token
         self._data.refresh_token = new_refresh_token
+        self._last_refresh_error = None
         self._set_authentication_status("authenticated")
         await self.async_store_tokens(update_last_refresh=True)
         self._next_refresh_retry_at = 0
@@ -750,6 +753,7 @@ class AkuvoxApiClient:
             "authentication_status": self._authentication_status,
             "last_authenticated": self._last_authentication_at,
             "last_authentication_error": self._last_authentication_error,
+            "last_refresh_error": self._last_refresh_error,
             "door_log_status": self._door_log_status,
             "last_door_log_response": self._last_door_log_at,
             "last_door_log_error": self._last_door_log_error,
