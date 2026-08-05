@@ -11,13 +11,13 @@ class DoorLogPoller:
 
     hass: HomeAssistant
     async_retrieve_personal_door_log = None
-    interval: int = 2
+    interval: int = 1800
     is_polling: bool = False
 
     def __init__(self,
                  hass: HomeAssistant,
                  poll_function,
-                 interval=2):
+                 interval=1800):
         """Initialize the poller for tghe personal door log API."""
         self.hass = hass
         self.async_retrieve_personal_door_log = poll_function

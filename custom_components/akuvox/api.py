@@ -642,16 +642,12 @@ class AkuvoxApiClient:
         await self.async_start_polling()
 
     async def async_retrieve_personal_door_log(self) -> bool:
-        """Poll the user's door log without exceeding Akuvox rate limits."""
-        poll_delay = 10
-        maximum_poll_delay = 120
+        """Poll the user's door log within Akuvox's advertised rate limit."""
+        poll_delay = 1800
         while True:
             try:
                 json_data = await self.async_get_personal_door_log()
-                if json_data is None:
-                    poll_delay = min(poll_delay * 2, maximum_poll_delay)
-                else:
-                    poll_delay = 10
+                if json_data is not None:
                     new_door_log = await self._data.async_parse_personal_door_log(json_data)
                     if new_door_log is not None:
                         LOGGER.debug("🚪 New door open event occurred. Firing akuvox_door_update event")
@@ -659,7 +655,6 @@ class AkuvoxApiClient:
             except asyncio.CancelledError:
                 raise
             except AkuvoxApiClientError as error:
-                poll_delay = min(poll_delay * 2, maximum_poll_delay)
                 LOGGER.warning("Unable to poll the Akuvox door log: %s", error)
             await asyncio.sleep(poll_delay)
 
@@ -689,22 +684,6 @@ class AkuvoxApiClient:
                                                         url=url,
                                                         headers=headers,
                                                         data=data) # type: ignore
-
-        if json_data == []:
-            app_type = self._data.app_type
-            self.switch_activities_host()
-            host = self.get_activities_host()
-            url = f"https://{host}/{API_GET_PERSONAL_DOOR_LOG}"
-            alternate_json_data = await self._async_api_wrapper(
-                method="get",
-                url=url,
-                headers=headers,
-                data=data,
-            )
-            if alternate_json_data:
-                json_data = alternate_json_data
-            else:
-                self._data.app_type = app_type
 
         if json_data is None and self.has_token_error():
             LOGGER.warning("Akuvox door log rejected the current token; refreshing and retrying once.")
