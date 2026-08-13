@@ -4,7 +4,7 @@ from collections.abc import Callable, Awaitable
 
 from homeassistant.helpers import storage
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.const import ATTR_IDENTIFIERS, CONF_NAME, CONF_VERIFY_SSL
+from homeassistant.const import CONF_NAME, CONF_VERIFY_SSL
 from homeassistant.core import HomeAssistant
 from homeassistant.components.generic.camera import GenericCamera
 
@@ -58,14 +58,15 @@ class AkuvoxCameraEntity(GenericCamera):
         super().__init__(
             hass=hass,
             device_info={
-                ATTR_IDENTIFIERS: {(DOMAIN, name)},
                 CONF_NAME: name,
                 "stream_source": rtsp_url,
-                "limit_refetch_to_url_change": True,
-                "framerate": 2,
                 "content_type": "",
-                CONF_VERIFY_SSL: False,
-                "rtsp_transport": "udp"
+                "advanced": {
+                    "limit_refetch_to_url_change": True,
+                    "framerate": 2,
+                    CONF_VERIFY_SSL: False,
+                    "rtsp_transport": "udp",
+                },
             },
             identifier=name,
             title=name,
@@ -82,4 +83,3 @@ class AkuvoxCameraEntity(GenericCamera):
             model=VERSION,
             manufacturer=NAME,
         )
-
