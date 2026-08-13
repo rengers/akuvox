@@ -35,6 +35,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass=hass,
             entry=entry,
         ),
+        config_entry=entry,
     )
     await async_update_configuration(hass=hass, entry=entry)
     await coordinator.client.async_init_api()

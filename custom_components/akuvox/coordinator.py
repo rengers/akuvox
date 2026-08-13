@@ -34,9 +34,11 @@ class AkuvoxDataUpdateCoordinator(DataUpdateCoordinator):
         self,
         hass: HomeAssistant,
         client: AkuvoxApiClient,
+        config_entry: ConfigEntry,
     ) -> None:
         """Initialize."""
         self.client = client
+        self.config_entry = config_entry
         super().__init__(
             hass=hass,
             logger=LOGGER,
@@ -58,4 +60,3 @@ class AkuvoxDataUpdateCoordinator(DataUpdateCoordinator):
             raise ConfigEntryAuthFailed(exception) from exception
         except AkuvoxApiClientError as exception:
             raise UpdateFailed(exception) from exception
-
