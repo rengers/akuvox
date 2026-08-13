@@ -110,6 +110,10 @@ class AkuvoxApiClient:
         if stored_refresh_token:
             self._data.refresh_token = stored_refresh_token
 
+        stored_rtsp_ip = await self._data.async_get_stored_data_for_key("rtsp_ip")
+        if stored_rtsp_ip:
+            self._data.rtsp_ip = stored_rtsp_ip
+
         stored_refresh_on_first_login = await self._data.async_get_stored_data_for_key(REFRESH_ON_FIRST_LOGIN_KEY)
         if stored_refresh_on_first_login is not None:
             self._data.refresh_on_first_login = bool(stored_refresh_on_first_login)
@@ -130,7 +134,7 @@ class AkuvoxApiClient:
             self._data.auth_mode == "family_member"
             and self._data.login_user
             and self._data.password_hash
-            and (not self._data.token or not self._data.host)
+            and (not self._data.token or not self._data.host or not self._data.rtsp_ip)
         ):
             if await self.async_family_member_login(
                 hass=self.hass,
@@ -972,6 +976,7 @@ class AkuvoxApiClient:
         await self._data.async_set_stored_data_for_key("auth_token", self._data.auth_token)
         await self._data.async_set_stored_data_for_key("token", self._data.token)
         await self._data.async_set_stored_data_for_key("refresh_token", self._data.refresh_token)
+        await self._data.async_set_stored_data_for_key("rtsp_ip", self._data.rtsp_ip)
         await self._data.async_set_stored_data_for_key(REFRESH_ON_FIRST_LOGIN_KEY, self._data.refresh_on_first_login)
         if update_last_refresh:
             await self._data.async_set_stored_data_for_key(LAST_TOKEN_REFRESH_KEY, int(time.time()))
