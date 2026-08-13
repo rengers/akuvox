@@ -65,6 +65,7 @@ class AkuvoxCameraEntity(GenericCamera):
                     "limit_refetch_to_url_change": True,
                     "framerate": 2,
                     CONF_VERIFY_SSL: False,
+                    "rtsp_transport": "tcp",
                 },
             },
             identifier=name,
